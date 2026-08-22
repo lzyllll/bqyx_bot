@@ -1,0 +1,22 @@
+bot_uin: '123456789'
+root: '123456789'
+debug: false
+adapters:
+# - type: ai
+#   platform: ai
+#   enabled: true
+#   config: {}
+- type: napcat
+  platform: qq
+  enabled: true
+  config:
+    ws_uri: ws://127.0.0.1:3001
+    ws_token: your_ws_token
+    webui_uri: http://127.0.0.1:6099
+    webui_token: your_webui_token
+    enable_webui: true
+plugin:
+  plugins_dir: plugins
+  load_plugin: true
+  plugin_whitelist: []
+  plugin_blacklist: []

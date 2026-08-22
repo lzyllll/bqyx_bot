@@ -1,0 +1,9 @@
+name = "lzy_plugin"
+version = "0.1.0"
+main = "plugin.py"
+author = "lzy"
+description = "NcatBot 模板插件 — AI 对话"
+entry_class = "LzyPlugin"
+pip_dependencies = []
+
+[dependencies]

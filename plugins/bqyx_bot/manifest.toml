@@ -1,0 +1,13 @@
+name = "bqyx_bot"
+version = "1.0.0"
+main = "plugin.py"
+entry_class = "BqyxBotPlugin"
+author = "lzy"
+description = "BQYX 军队查询与绑定"
+
+[dependencies]
+
+[pip_dependencies]
+python-dotenv = ">=1.0.1"
+rapidfuzz = ">=3.0.0"
+scipy = ">=1.11.0"

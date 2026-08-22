@@ -1,0 +1,38 @@
+[project]
+name = "nbt5"
+version = "0.1.0"
+description = "BQYX NcatBot"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ncatbot5",
+    "python-dotenv>=1.0.1",
+    "rapidfuzz>=3.0.0",
+    "scipy>=1.11.0",
+    "sympy>=1.12",
+    "bqyx-api[render]",
+]
+
+[tool.uv.sources]
+bqyx-api = { path = "../bqyx_api" }
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["plugins"]
+testpaths = ["tests"]
+
+[tool.pyright]
+typeCheckingMode = "off"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["plugins"]
