@@ -5,6 +5,7 @@ __pycache__/
 data/
 logs/
 *.db
+tests/output/
 .pytest_cache/
 .ruff_cache/
 .uv-cache/
