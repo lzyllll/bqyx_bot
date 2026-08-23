@@ -239,7 +239,7 @@ class UnionRankHandlers(BqyxServices):
         snapshots = await self.store.list_union_snapshots(day)
         spec = parse_rank_range(event.message.text)
         if not snapshots or _spec_need(spec, len(snapshots)) > len(snapshots):
-            snapshots = await self._live_union_snapshots(user, day, snapshots)
+            snapshots = await self._live_union_snapshots(user, day, spec, snapshots)
             if not snapshots:
                 raise BotError(f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。")
         center_rank, window = resolve_rank_spec(spec, len(snapshots))
@@ -267,10 +267,12 @@ class UnionRankHandlers(BqyxServices):
         self,
         user,
         day: str,
+        spec: tuple[int, int] | int | None,
         cache: list[UnionSnapshot],
     ) -> list[UnionSnapshot]:
-        """快照 cache 不足时直接实时拉取前 1000 补足。"""
-        unions = await fetch_union_rank(user)
+        """快照 cache 不足时实时渐进扩大：先扩 10，再每次扩 100，上限 1000。"""
+        need = max(_spec_need(spec, 0), len(cache) + 10)
+        unions = await fetch_union_rank(user, min(need, UNION_RANK_LIMIT))
         if not unions:
             return cache
         cache_map = {item.union_id: item for item in cache}
