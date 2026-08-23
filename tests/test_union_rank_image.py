@@ -84,12 +84,12 @@ async def test_render_union_rank_images():
 
     outputs = [
         await _render(
-            "昨日日贡排名",
+            "昨日日贡排行",
             yesterday_rows,
             "union_rank_yesterday.png",
         ),
         await _render(
-            "今日日贡排名（实时）",
+            "今日日贡排行（实时）",
             today_rows,
             "union_rank_today.png",
         ),

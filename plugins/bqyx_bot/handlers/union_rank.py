@@ -1,4 +1,4 @@
-"""军队排行查询：昨日日贡排名 / 今日日贡排名 / 军队排行（图片渲染，高亮本军）。"""
+"""军队排行查询：昨日日贡排行 / 今日日贡排行 / 军队排行（图片渲染，高亮本军）。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ..schedule import SHANGHAI, report_date
 from ..union_rank_render import UnionRankRenderer
 from .schedule import fetch_union_rank
 
-# 默认以本军排名为中心，前后各取 6 名；可指定范围，但窗口上限 20
+# 默认以本军排行为中心，前后各取 6 名；可指定范围，但窗口上限 20
 RANK_WINDOW = 6
 MAX_WINDOW = 20
 
@@ -43,7 +43,7 @@ def _contribution_change(current_contribution: int, prev: UnionSnapshot | None) 
 
 
 def parse_rank_range(text: str) -> tuple[int, int] | int | None:
-    """解析排名参数：'A-B' 区间 / 'N' 中心排名 / None（以本军为中心）。"""
+    """解析排行参数：'A-B' 区间 / 'N' 中心排行 / None（以本军为中心）。"""
     tokens = (text or "").split()[1:]
     for token in tokens:
         match = re.match(r"^(\d{1,4})-(\d{1,4})$", token)
@@ -58,7 +58,7 @@ def resolve_rank_spec(
     spec: tuple[int, int] | int | None,
     count: int,
 ) -> tuple[int | None, int]:
-    """把排名参数解析为（中心排名, 窗口）。count 为榜单总行数。"""
+    """把排行参数解析为（中心排行, 窗口）。count 为榜单总行数。"""
     if spec is None:
         return None, RANK_WINDOW
     if isinstance(spec, int):
@@ -79,9 +79,9 @@ def _rank_rows(
     window: int = RANK_WINDOW,
     center_rank: int | None = None,
 ) -> tuple[list[dict], int | None]:
-    """把榜单按 value_key 降序重排，返回展示行与本军展示排名。
+    """把榜单按 value_key 降序重排，返回展示行与本军展示排行。
 
-    center_rank 指定中心排名（1-based）；为 None 时以本军（army_id）为中心。
+    center_rank 指定中心排行（1-based）；为 None 时以本军（army_id）为中心。
     window 会被限制在 MAX_WINDOW 以内。本军不在窗口内时 highlight 返回 None。
     """
     ranked = sorted(items, key=lambda item: int(getattr(item, value_key, 0) or 0), reverse=True)
@@ -128,9 +128,9 @@ class UnionRankHandlers(BqyxServices):
     @yesterday_union_limit
     @registrar.on_group_command("昨日日贡排行")
     async def yesterday_union_rank(self, event: GroupMessageEvent) -> None:
-        """昨日日贡排名：读昨日快照的当日新增贡献。
+        """昨日日贡排行：读昨日快照的当日新增贡献。
 
-        支持可选参数：'昨日日贡排行 90-110'（指定区间）或 '昨日日贡排行 100'（指定中心排名）。
+        支持可选参数：'昨日日贡排行 90-110'（指定区间）或 '昨日日贡排行 100'（指定中心排行）。
         人数变动对比前天快照标注（利用 3 天保留窗口）。
         """
         _, army_id = await self.require_army(str(event.group_id))
@@ -148,13 +148,13 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            raise BotError("指定的排名范围无效。")
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
         await self._with_member_change(rows)
         await self._send_rank(
             event,
-            title="昨日日贡排名",
+            title="昨日日贡排行",
             date_label=day,
             rows=rows,
             captured_at=snapshots[0].captured_at,
@@ -164,7 +164,7 @@ class UnionRankHandlers(BqyxServices):
     @union_live_limit
     @registrar.on_group_command("今日日贡排行")
     async def today_union_rank(self, event: GroupMessageEvent) -> None:
-        """今日日贡排名：实时拉取当前数据，对比昨晚快照算当日新增。"""
+        """今日日贡排行：实时拉取当前数据，对比昨晚快照算当日新增。"""
         user, army_id = await self.require_army(str(event.group_id))
         day = report_date()
         prev_map = {
@@ -206,7 +206,7 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            raise BotError("指定的排名范围无效。")
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
         for row in rows:
@@ -214,7 +214,7 @@ class UnionRankHandlers(BqyxServices):
             row["member_change"] = _member_change(row["members_num"], prev)
         await self._send_rank(
             event,
-            title="今日日贡排名（实时）",
+            title="今日日贡排行（实时）",
             date_label=day,
             rows=rows,
             captured_at=captured_at,
@@ -240,7 +240,7 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            raise BotError("指定的排名范围无效。")
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
         await self._with_member_change(rows, contribution_change=True)
