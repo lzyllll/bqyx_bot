@@ -19,7 +19,6 @@ from ..schedule import (
     calculate_yesterday,
     capture_date,
     format_below_text,
-    format_rank_text,
     report_date,
     snapshot_from_member,
 )
@@ -144,14 +143,19 @@ class ScheduleHandlers(BqyxServices):
                     army_cache=army_cache,
                     captured_at=captured_at,
                 )
-                await self._send_group_report(group_id, previous_day, scores, limit)
                 ok += 1
+                LOG.info(
+                    "群 %s 昨日贡献已计算：%s 人（%s，阈值 %s）",
+                    group_id,
+                    len(scores),
+                    previous_day,
+                    limit,
+                )
             except BotError as exc:
                 LOG.warning("群 %s 昨日贡献跳过：%s", group_id, exc)
-                await self.api.qq.post_group_msg(int(group_id), text=str(exc))
             except Exception:
-                LOG.exception("群 %s 昨日贡献推送失败", group_id)
-        LOG.info("昨日贡献推送完成：%s/%s 个群", ok, len(groups))
+                LOG.exception("群 %s 昨日贡献计算失败", group_id)
+        LOG.info("昨日贡献计算完成：%s/%s 个群", ok, len(groups))
 
     async def _yesterday_scores(
         self,
@@ -165,7 +169,7 @@ class ScheduleHandlers(BqyxServices):
         previous_day = report_date()
         previous = await self.store.list_member_snapshots(group_id, previous_day)
         if not previous:
-            raise BotError(f"没有 {previous_day} 的 23:30 成员快照，请等晚上采集完成后再试。")
+            raise BotError(f"没有 {previous_day} 的 成员快照，请等晚上采集完成后再试。")
         current = await self._live_snapshots(
             user,
             army_cache,
@@ -197,29 +201,6 @@ class ScheduleHandlers(BqyxServices):
             )
             for member in army_cache[army_id]
         ]
-
-    async def _send_group_report(
-        self,
-        group_id: str,
-        snapshot_day: str,
-        items: list[YesterdayScore],
-        limit: int,
-    ) -> None:
-        await self.replies.send_group_forward_text(
-            group_id,
-            format_rank_text(snapshot_day, items),
-        )
-        missing = below_limit(items, limit)
-        if not missing:
-            await self.api.qq.post_group_msg(
-                int(group_id),
-                text=format_below_text(limit, missing),
-            )
-            return
-        await self.api.qq.post_group_msg(
-            int(group_id),
-            rtf=await self._yesterday_at_chain(group_id, missing, limit),
-        )
 
     async def _yesterday_at_chain(
         self,

@@ -98,18 +98,6 @@ def below_limit(items: list[YesterdayScore], limit: int) -> list[YesterdayScore]
     return [item for item in rank_scores(items) if item.yesterday < limit]
 
 
-def format_rank_text(snapshot_date: str, items: list[YesterdayScore]) -> str:
-    ranked = rank_scores(items)
-    lines = [
-        f"昨日贡献排行（{snapshot_date}）",
-        f"人数: {len(ranked)}",
-        "",
-    ]
-    for index, item in enumerate(ranked, 1):
-        lines.append(f"{index}. {item.nickname}  {item.yesterday}")
-    return "\n".join(lines)
-
-
 def format_below_text(limit: int, items: list[YesterdayScore]) -> str:
     if not items:
         return f"太棒了！没有人昨日贡献低于 {limit}。"

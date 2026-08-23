@@ -8,7 +8,6 @@ from bqyx_bot.schedule import (
     calculate_yesterday,
     capture_date,
     format_below_text,
-    format_rank_text,
     report_date,
     snapshot_from_member,
     yesterday_contribution,
@@ -101,16 +100,6 @@ def test_snapshot_from_member_reads_detail():
     assert item.con_day == 1234
     assert item.this_week == 5600
 
-
-def test_format_rank_text_includes_date_and_scores():
-    items = [
-        YesterdayScore("2", 0, "甲", 2100),
-        YesterdayScore("1", 0, "乙", 800),
-    ]
-    text = format_rank_text("2026-08-23", items)
-    assert "2026-08-23" in text
-    assert "1. 甲  2100" in text
-    assert "2. 乙  800" in text
 
 def test_format_below_text_filters_message():
     items = [
