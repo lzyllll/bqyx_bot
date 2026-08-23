@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent
@@ -121,6 +121,7 @@ class UnionRankHandlers(BqyxServices):
         """昨日日贡排名：读昨日快照的当日新增贡献。
 
         支持可选参数：'昨日日贡 90-110'（指定区间）或 '昨日日贡 100'（指定中心排名）。
+        人数变动对比前天快照标注（利用 3 天保留窗口）。
         """
         _, army_id = await self.require_army(str(event.group_id))
         day = report_date()
@@ -140,6 +141,14 @@ class UnionRankHandlers(BqyxServices):
             raise BotError("指定的排名范围无效。")
         if spec is None and highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
+        prev_day = (datetime.now(SHANGHAI) - timedelta(days=2)).date().isoformat()
+        prev_map = {
+            item.union_id: item
+            for item in await self.store.list_union_snapshots(prev_day)
+        }
+        for row in rows:
+            prev = prev_map.get(int(row["union_id"]))
+            row["member_change"] = _member_change(row["members_num"], prev)
         await self._send_rank(
             event,
             title="昨日日贡排名",

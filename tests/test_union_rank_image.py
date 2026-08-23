@@ -62,6 +62,11 @@ async def test_render_union_rank_images():
     today_rows[6]["member_change"] = "+3"  # 50 名
     today_rows[4]["member_change"] = "-2"  # 48 名
 
+    # 昨日日贡也标注（对比前天）：第 50 名 +5、第 47 名 -1
+    yesterday_rows = _rank_rows(items, "today_contribution", army_id)[0]
+    yesterday_rows[6]["member_change"] = "+5"
+    yesterday_rows[3]["member_change"] = "-1"
+
     # 指定区间：以第 90 名为中心 ±10（窗口上限内）
     range_rows = _rank_rows(
         items,
@@ -74,7 +79,7 @@ async def test_render_union_rank_images():
     outputs = [
         await _render(
             "昨日日贡排名",
-            _rank_rows(items, "today_contribution", army_id)[0],
+            yesterday_rows,
             "union_rank_yesterday.png",
         ),
         await _render(
