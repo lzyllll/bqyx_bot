@@ -31,10 +31,6 @@ class ScheduleHandlers(BqyxServices):
         async with self._lock():
             await self._capture_members()
 
-    async def report_yesterday(self) -> None:
-        async with self._lock():
-            await self._report_yesterday()
-
     @error_reply
     @query_limit
     @registrar.on_group_command("昨日贡献")
@@ -122,40 +118,6 @@ class ScheduleHandlers(BqyxServices):
             except Exception:
                 LOG.exception("采集群 %s 军队 %s 失败", group_id, army_id)
         LOG.info("成员采集完成：%s/%s 个群", ok, len(groups))
-
-    async def _report_yesterday(self) -> None:
-        groups = await self.store.list_group_armies()
-        if not groups:
-            LOG.info("没有已绑定军队的群，跳过昨日贡献")
-            return
-
-        captured_at = datetime.now(timezone.utc).isoformat()
-        limit = ContributionKind.DAILY.default_limit
-        user = await self.account.get_user()
-        army_cache: dict[int, list] = {}
-        ok = 0
-        for group_id, army_id in groups:
-            try:
-                previous_day, scores = await self._yesterday_scores(
-                    group_id,
-                    army_id,
-                    user=user,
-                    army_cache=army_cache,
-                    captured_at=captured_at,
-                )
-                ok += 1
-                LOG.info(
-                    "群 %s 昨日贡献已计算：%s 人（%s，阈值 %s）",
-                    group_id,
-                    len(scores),
-                    previous_day,
-                    limit,
-                )
-            except BotError as exc:
-                LOG.warning("群 %s 昨日贡献跳过：%s", group_id, exc)
-            except Exception:
-                LOG.exception("群 %s 昨日贡献计算失败", group_id)
-        LOG.info("昨日贡献计算完成：%s/%s 个群", ok, len(groups))
 
     async def _yesterday_scores(
         self,
