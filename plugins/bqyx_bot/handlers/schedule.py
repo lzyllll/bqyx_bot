@@ -226,7 +226,12 @@ class ScheduleHandlers(BqyxServices):
     ) -> tuple[str, list[YesterdayScore]]:
         """昨日贡献：读昨天快照，实时拉取当前数据对比计算。"""
         previous_day = report_date()
-        previous = await self.store.list_member_snapshots(group_id, previous_day)
+        # 按 army_id 过滤：群改绑军队后同群可能残留旧军队快照，避免误用
+        previous = await self.store.list_member_snapshots(
+            group_id,
+            previous_day,
+            army_id=army_id,
+        )
         if not previous:
             raise BotError(f"没有 {previous_day} 的成员快照，请等晚上采集完成后再试。")
         current = await self._live_snapshots(

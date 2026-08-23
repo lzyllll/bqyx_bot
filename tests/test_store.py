@@ -128,6 +128,29 @@ async def test_snapshot_retention_disabled_keeps_all(tmp_path):
     assert len(await store.list_member_snapshots("100", today)) == 1
 
 
+async def test_list_member_snapshots_filters_by_army(tmp_path):
+    """群改绑军队后，同群残留旧军队快照必须能被 army_id 过滤掉。"""
+    from bqyx_bot.models import MemberSnapshot
+
+    store = SqliteStore(tmp_path / "army.db", retention_days=0)
+    await store.init()
+
+    def snap(army_id, uid):
+        return MemberSnapshot("g1", army_id, "2026-08-23", uid, 0, "n" + uid, 1, 1, 1, "t")
+
+    await store.replace_member_snapshots("g1", 1241, "2026-08-23", [snap(1241, "old")])
+    await store.replace_member_snapshots("g1", 29802, "2026-08-24", [snap(29802, "new")])
+
+    # 不指定 army_id：同群同日期按覆盖语义只剩最后写入的一份
+    assert [item.army_id for item in await store.list_member_snapshots("g1", "2026-08-23")] == [1241]
+    assert [item.army_id for item in await store.list_member_snapshots("g1", "2026-08-24")] == [29802]
+
+    # 指定 army_id：精确过滤
+    assert await store.list_member_snapshots("g1", "2026-08-23", army_id=29802) == []
+    assert [item.uid for item in await store.list_member_snapshots("g1", "2026-08-24", army_id=29802)] == ["new"]
+    assert [item.uid for item in await store.list_member_snapshots("g1", "2026-08-23", army_id=1241)] == ["old"]
+
+
 async def test_union_snapshot_roundtrip(store):
     from bqyx_bot.models import UnionSnapshot
 

@@ -176,18 +176,37 @@ class SqliteStore:
         self,
         group_id: str,
         snapshot_date: str,
+        army_id: int | None = None,
     ) -> list[MemberSnapshot]:
-        rows = await self._run(
-            self._fetchall,
-            """
-            SELECT group_id, army_id, snapshot_date, uid, arch_index,
-                   nickname, contribution, con_day, this_week, captured_at
-            FROM member_snapshot
-            WHERE group_id = ? AND snapshot_date = ?
-            ORDER BY contribution DESC, nickname
-            """,
-            (str(group_id), str(snapshot_date)),
-        )
+        """查询某群某天的成员快照；指定 army_id 时只返回该军队的快照。
+
+        群改绑军队后，同群可能残留旧军队的快照（每群每天仅一份），
+        查询时必须按 army_id 过滤，避免把旧军队数据误当成本军队的。
+        """
+        if army_id is None:
+            rows = await self._run(
+                self._fetchall,
+                """
+                SELECT group_id, army_id, snapshot_date, uid, arch_index,
+                       nickname, contribution, con_day, this_week, captured_at
+                FROM member_snapshot
+                WHERE group_id = ? AND snapshot_date = ?
+                ORDER BY contribution DESC, nickname
+                """,
+                (str(group_id), str(snapshot_date)),
+            )
+        else:
+            rows = await self._run(
+                self._fetchall,
+                """
+                SELECT group_id, army_id, snapshot_date, uid, arch_index,
+                       nickname, contribution, con_day, this_week, captured_at
+                FROM member_snapshot
+                WHERE group_id = ? AND snapshot_date = ? AND army_id = ?
+                ORDER BY contribution DESC, nickname
+                """,
+                (str(group_id), str(snapshot_date), int(army_id)),
+            )
         return [self._row_to_snapshot(row) for row in rows]
 
     async def replace_union_snapshots(
