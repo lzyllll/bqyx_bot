@@ -140,6 +140,14 @@ async def test_union_snapshot_roundtrip(store):
     assert [(item.union_id, item.rank) for item in loaded] == [(1001, 1), (1002, 2)]
     assert loaded[0].today_contribution == 3000
 
+    # 无基线（首次采集）时 today_contribution 存 None，读回后保持 None
+    await store.replace_union_snapshots(
+        "2026-08-24",
+        [UnionSnapshot("2026-08-24", 1, 1001, "甲军", 5, 120, 91000, None, "t3")],
+    )
+    loaded_none = await store.list_union_snapshots("2026-08-24")
+    assert loaded_none[0].today_contribution is None
+
     # 覆盖式写入同一天
     await store.replace_union_snapshots(
         "2026-08-23",
@@ -169,3 +177,56 @@ async def test_union_snapshot_retention_prunes_old_days(tmp_path):
 
     assert await store.list_union_snapshots(old_day) == []
     assert [item.union_id for item in await store.list_union_snapshots(today)] == [2]
+
+
+async def test_union_snapshot_nullable_migration(tmp_path):
+    """老库（today_contribution NOT NULL DEFAULT 0）init 后：列变可空，整日全 0 转 NULL。"""
+    import sqlite3
+
+    from bqyx_bot.models import UnionSnapshot
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE union_snapshot (
+            snapshot_date TEXT NOT NULL,
+            rank INTEGER NOT NULL,
+            union_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            level INTEGER NOT NULL DEFAULT 0,
+            members_num INTEGER NOT NULL DEFAULT 0,
+            contribution INTEGER NOT NULL DEFAULT 0,
+            today_contribution INTEGER NOT NULL DEFAULT 0,
+            captured_at TEXT NOT NULL,
+            PRIMARY KEY (snapshot_date, union_id)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO union_snapshot VALUES ('2026-08-22', 1, 1, '甲', 1, 10, 100, 0, 't')"
+    )
+    conn.execute(
+        "INSERT INTO union_snapshot VALUES ('2026-08-22', 2, 2, '乙', 1, 10, 200, 0, 't')"
+    )
+    conn.execute(
+        "INSERT INTO union_snapshot VALUES ('2026-08-23', 1, 1, '甲', 1, 10, 300, 200, 't')"
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteStore(path, retention_days=0)
+    await store.init()
+
+    day22 = await store.list_union_snapshots("2026-08-22")
+    assert [item.today_contribution for item in day22] == [None, None]  # 整日全 0 → NULL
+    day23 = await store.list_union_snapshots("2026-08-23")
+    assert day23[0].today_contribution == 200  # 有值的日期保留
+
+    # 迁移后列可空，可写入 None
+    await store.replace_union_snapshots(
+        "2026-08-24",
+        [UnionSnapshot("2026-08-24", 1, 1, "甲", 1, 10, 400, None, "t")],
+    )
+    loaded = await store.list_union_snapshots("2026-08-24")
+    assert loaded[0].today_contribution is None

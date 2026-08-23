@@ -166,7 +166,8 @@ class ScheduleHandlers(BqyxServices):
         for index, union in enumerate(ranked, 1):
             contribution = int(getattr(union, "contribution", 0) or 0)
             prev = prev_map.get(int(getattr(union, "id", 0) or 0))
-            today_contribution = max(contribution - prev, 0) if prev is not None else 0
+            # 无前一天基线（首次采集）时无法计算日贡，存 None 以便查询时不展示
+            today_contribution = max(contribution - prev, 0) if prev is not None else None
             rows.append(
                 UnionSnapshot(
                     snapshot_date=snapshot_day,

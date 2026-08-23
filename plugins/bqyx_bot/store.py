@@ -301,7 +301,8 @@ class SqliteStore:
                     PRIMARY KEY (group_id, snapshot_date, uid, arch_index)
                 );
                 -- 军队排行快照：每天 23:59 全量覆盖写入一份（前 1000 名）。
-                -- 接口只有总贡献，today_contribution 由相邻两天快照对比得出。
+                -- 接口只有总贡献，today_contribution 由相邻两天快照对比得出；
+                -- 无前一天基线（首次采集）时存 NULL，表示无法计算。
                 CREATE TABLE IF NOT EXISTS union_snapshot (
                     snapshot_date TEXT NOT NULL,
                     rank INTEGER NOT NULL,
@@ -310,13 +311,14 @@ class SqliteStore:
                     level INTEGER NOT NULL DEFAULT 0,
                     members_num INTEGER NOT NULL DEFAULT 0,
                     contribution INTEGER NOT NULL DEFAULT 0,
-                    today_contribution INTEGER NOT NULL DEFAULT 0,
+                    today_contribution INTEGER,
                     captured_at TEXT NOT NULL,
                     PRIMARY KEY (snapshot_date, union_id)
                 );
                 """
             )
             self._ensure_snapshot_contribution(conn)
+            self._ensure_union_snapshot_nullable(conn)
 
     def _ensure_snapshot_contribution(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(member_snapshot)").fetchall()}
@@ -324,6 +326,56 @@ class SqliteStore:
             conn.execute(
                 "ALTER TABLE member_snapshot ADD COLUMN contribution INTEGER NOT NULL DEFAULT 0"
             )
+
+    def _ensure_union_snapshot_nullable(self, conn: sqlite3.Connection) -> None:
+        """老库的 today_contribution 是 NOT NULL DEFAULT 0，重建为可空列以支持存 None。"""
+        columns = {
+            row[1]: row for row in conn.execute("PRAGMA table_info(union_snapshot)").fetchall()
+        }
+        if "today_contribution" not in columns:
+            return
+        if columns["today_contribution"][3] != 1:  # notnull 已经是 0（可空）则跳过
+            return
+        conn.execute("ALTER TABLE union_snapshot RENAME TO union_snapshot_old")
+        conn.executescript(
+            """
+            CREATE TABLE union_snapshot (
+                snapshot_date TEXT NOT NULL,
+                rank INTEGER NOT NULL,
+                union_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                level INTEGER NOT NULL DEFAULT 0,
+                members_num INTEGER NOT NULL DEFAULT 0,
+                contribution INTEGER NOT NULL DEFAULT 0,
+                today_contribution INTEGER,
+                captured_at TEXT NOT NULL,
+                PRIMARY KEY (snapshot_date, union_id)
+            );
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO union_snapshot (
+                snapshot_date, rank, union_id, name, level,
+                members_num, contribution, today_contribution, captured_at
+            ) SELECT snapshot_date, rank, union_id, name, level,
+                     members_num, contribution, today_contribution, captured_at
+              FROM union_snapshot_old
+            """
+        )
+        conn.execute("DROP TABLE union_snapshot_old")
+        # 旧数据里"整日全 0"的快照是首次采集（无基线）留下的占位，
+        # 与真实日贡 0 无法区分，统一转 NULL 以便查询时不展示。
+        conn.execute(
+            """
+            UPDATE union_snapshot SET today_contribution = NULL
+            WHERE snapshot_date IN (
+                SELECT snapshot_date FROM union_snapshot
+                GROUP BY snapshot_date
+                HAVING MAX(today_contribution) = 0 AND MIN(today_contribution) = 0
+            )
+            """
+        )
 
     def _replace_member_snapshots(
         self,
@@ -405,7 +457,7 @@ class SqliteStore:
                         int(item.level),
                         int(item.members_num),
                         int(item.contribution),
-                        int(item.today_contribution),
+                        int(item.today_contribution) if item.today_contribution is not None else None,
                         item.captured_at,
                     )
                     for item in items
@@ -477,6 +529,6 @@ class SqliteStore:
             level=int(row[4]),
             members_num=int(row[5]),
             contribution=int(row[6]),
-            today_contribution=int(row[7]),
+            today_contribution=int(row[7]) if row[7] is not None else None,
             captured_at=str(row[8]),
         )

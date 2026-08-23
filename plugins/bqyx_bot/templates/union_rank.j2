@@ -189,7 +189,7 @@
         <div class="name" title="{{ row.name }}">{{ row.name }}</div>
         <div class="num">{{ row.contribution }}</div>
         {% if show_daily %}
-        <div class="score">{{ row.today_contribution }}</div>
+        <div class="score">{% if row.today_contribution is not none %}{{ row.today_contribution }}{% else %}<span class="change muted">—</span>{% endif %}</div>
         {% else %}
         <div class="score">{% if row.contribution_delta %}<span class="change {{ 'up' if row.contribution_delta.startswith('+') else 'down' }}">{{ row.contribution_delta }}</span>{% else %}<span class="change muted">—</span>{% endif %}</div>
         {% endif %}

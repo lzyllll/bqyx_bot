@@ -70,7 +70,7 @@ class UnionSnapshot:
     level: int
     members_num: int
     contribution: int  # 总贡献（累计值）
-    today_contribution: int  # 当日新增贡献（相邻两天快照对比）
+    today_contribution: int | None  # 当日新增贡献（相邻两天快照对比）；无基线（首次采集）为 None
     captured_at: str
 
 

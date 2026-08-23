@@ -147,6 +147,10 @@ class UnionRankHandlers(BqyxServices):
         snapshots = await self.store.list_union_snapshots(day)
         if not snapshots:
             raise BotError(f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。")
+        # 昨日日贡 = 昨日快照的 today_contribution，需要前天快照做基线；
+        # 没有前天数据（首次采集）时无法计算，整个榜单都不展示。
+        if all(item.today_contribution is None for item in snapshots):
+            raise BotError(f"没有 {day} 的前一天军队排行快照，昨日日贡暂无法计算，请等今晚采集后再试。")
         spec = parse_rank_range(event.message.text)
         center_rank, window = resolve_rank_spec(spec, len(snapshots))
         rows, highlight = _rank_rows(
@@ -201,7 +205,7 @@ class UnionRankHandlers(BqyxServices):
                     level=int(getattr(union, "level", 0) or 0),
                     members_num=int(getattr(union, "members_num", 0) or 0),
                     contribution=contribution,
-                    today_contribution=max(contribution - prev.contribution, 0) if prev is not None else 0,
+                    today_contribution=max(contribution - prev.contribution, 0) if prev is not None else None,
                     captured_at=captured_at,
                 )
             )
@@ -311,7 +315,7 @@ class UnionRankHandlers(BqyxServices):
                         level=int(getattr(union, "level", 0) or 0),
                         members_num=int(getattr(union, "members_num", 0) or 0),
                         contribution=int(getattr(union, "contribution", 0) or 0),
-                        today_contribution=prev_item.today_contribution if prev_item else 0,
+                        today_contribution=prev_item.today_contribution if prev_item else None,
                         captured_at=captured_at,
                     )
                 )
