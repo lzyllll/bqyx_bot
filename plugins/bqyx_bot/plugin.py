@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+from bqyx_api.archive.paths import archive_store_dir, icon_dir, resource_dir
 from bqyx_api.archive.things import MyThingsService
 from ncatbot.plugin import NcatBotPlugin
 
@@ -40,7 +41,8 @@ class BqyxBotPlugin(
         await self.store.init()
         self.account = AccountService(self.settings, self.store, self.logger)
         self.replies = ReplyService(self.api, self.workspace)
-        self.things = MyThingsService.from_env(store_path=self.workspace / "archives")
+        # 资源/图标/快照目录均从 .env 读取（BQYX_RESOURCE_DIR/BQYX_ASSETS_DIR/BQYX_ARCHIVE_STORE）
+        self.things = MyThingsService(resource_dir(), icon_dir(), archive_store_dir())
         await self.account.warmup()
         self._nightly_lock = asyncio.Lock()
         if not self.add_scheduled_task(
