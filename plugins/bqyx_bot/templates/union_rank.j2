@@ -145,6 +145,9 @@
     .name { font-size: 14px; font-weight: 600; color: var(--text-main); }
     .num { font-size: 13px; color: #475569; font-family: 'Segoe UI', monospace; }
     .score { font-size: 14px; font-weight: 700; color: var(--primary-gold); font-family: 'Segoe UI', monospace; }
+    .change { font-size: 12px; font-weight: 700; margin-left: 4px; }
+    .change.up { color: #16a34a; }
+    .change.down { color: #dc2626; }
 
     .empty { color: var(--text-muted); padding: 50px 0; text-align: center; font-size: 14px; }
   </style>
@@ -182,7 +185,7 @@
         <div class="name" title="{{ row.name }}">{{ row.name }}</div>
         <div class="num">{{ row.contribution }}</div>
         <div class="score">{{ row.today_contribution }}</div>
-        <div class="num" style="text-align: right;">{{ row.members_num }}</div>
+        <div class="num" style="text-align: right;">{{ row.members_num }}{% if row.member_change %}<span class="change {{ 'up' if row.member_change.startswith('+') else 'down' }}">{{ row.member_change }}</span>{% endif %}</div>
       </div>
       {% endfor %}
     </div>

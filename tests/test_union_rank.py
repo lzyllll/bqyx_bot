@@ -1,15 +1,15 @@
-from bqyx_bot.handlers.union_rank import RANK_WINDOW, _rank_rows
+from bqyx_bot.handlers.union_rank import RANK_WINDOW, _member_change, _rank_rows
 from bqyx_bot.models import UnionSnapshot
 
 
-def _row(union_id, contribution, today_contribution=0, name=""):
+def _row(union_id, contribution, today_contribution=0, name="", members_num=10):
     return UnionSnapshot(
         snapshot_date="2026-08-23",
         rank=0,
         union_id=union_id,
         name=name or str(union_id),
         level=1,
-        members_num=10,
+        members_num=members_num,
         contribution=contribution,
         today_contribution=today_contribution,
         captured_at="t",
@@ -52,3 +52,11 @@ def test_rank_rows_missing_army_returns_none():
     rows, highlight = _rank_rows(items, "today_contribution", army_id=999)
     assert rows == []
     assert highlight is None
+
+
+def test_member_change_marks_diff_only():
+    prev = _row(1, 100, 5, members_num=90)
+    assert _member_change(93, prev) == "+3"
+    assert _member_change(87, prev) == "-3"
+    assert _member_change(90, prev) is None
+    assert _member_change(90, None) is None

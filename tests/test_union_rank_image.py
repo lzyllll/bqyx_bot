@@ -57,6 +57,11 @@ async def test_render_union_rank_images():
     items = _make_items()
     army_id = 1000 + ARMY_CENTER
 
+    today_rows = _rank_rows(items, "today_contribution", army_id)[0]
+    # 模拟今日成员变动：第 50 名 +3、第 48 名 -2，验证图片标注
+    today_rows[6]["member_change"] = "+3"  # 50 名
+    today_rows[4]["member_change"] = "-2"  # 48 名
+
     outputs = [
         await _render(
             "昨日日贡排名",
@@ -65,7 +70,7 @@ async def test_render_union_rank_images():
         ),
         await _render(
             "今日日贡排名（实时）",
-            _rank_rows(items, "today_contribution", army_id)[0],
+            today_rows,
             "union_rank_today.png",
         ),
         await _render(

@@ -20,12 +20,22 @@ from .schedule import fetch_union_rank
 RANK_WINDOW = 6
 
 
+def _member_change(current_members: int, prev: UnionSnapshot | None) -> str | None:
+    """今日军队人数相对昨晚快照的变动标注；无变动或缺少基线返回 None。"""
+    if prev is None:
+        return None
+    diff = int(current_members) - int(prev.members_num)
+    if diff == 0:
+        return None
+    return f"+{diff}" if diff > 0 else str(diff)
+
+
 def _rank_rows(
     items: list[UnionSnapshot],
     value_key: str,
     army_id: int,
 ) -> tuple[list[dict], int | None]:
-    """把榜单按 value_key 降序重排，返回展示行（±20 窗口）与本军展示排名。"""
+    """把榜单按 value_key 降序重排，返回展示行（±RANK_WINDOW 窗口）与本军展示排名。"""
     ranked = sorted(items, key=lambda item: int(getattr(item, value_key, 0) or 0), reverse=True)
     center = next(
         (i for i, item in enumerate(ranked) if int(item.union_id) == int(army_id)),
@@ -41,6 +51,7 @@ def _rank_rows(
         rows.append(
             {
                 "rank": pos + 1,
+                "union_id": item.union_id,
                 "name": item.name,
                 "members_num": item.members_num,
                 "contribution": item.contribution,
@@ -88,7 +99,7 @@ class UnionRankHandlers(BqyxServices):
         user, army_id = await self.require_army(str(event.group_id))
         day = report_date()
         prev_map = {
-            item.union_id: item.contribution
+            item.union_id: item
             for item in await self.store.list_union_snapshots(day)
         }
         if not prev_map:
@@ -112,13 +123,16 @@ class UnionRankHandlers(BqyxServices):
                     level=int(getattr(union, "level", 0) or 0),
                     members_num=int(getattr(union, "members_num", 0) or 0),
                     contribution=contribution,
-                    today_contribution=max(contribution - prev, 0) if prev is not None else 0,
+                    today_contribution=max(contribution - prev.contribution, 0) if prev is not None else 0,
                     captured_at=captured_at,
                 )
             )
         rows, highlight = _rank_rows(items, "today_contribution", army_id)
         if highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
+        for row in rows:
+            prev = prev_map.get(int(row["union_id"]))
+            row["member_change"] = _member_change(row["members_num"], prev)
         await self._send_rank(
             event,
             title="今日日贡排名（实时）",
