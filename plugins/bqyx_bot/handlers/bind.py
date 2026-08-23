@@ -36,7 +36,7 @@ class BindHandlers(BqyxServices):
     async def bind_uid(self, event: GroupMessageEvent, uid: str = "") -> None:
         resolved_uid = extract_uid(uid) or extract_uid(event.message.text)
         if not resolved_uid:
-            raise BotError("请提供有效的游戏 UID，例如 123456 或 123456_a")
+            raise BotError("请提供有效的游戏 UID，例如 123456_1")
 
         user, army_id = await self.require_army(str(event.group_id))
         members = await user.get_members(army_id)

@@ -3,13 +3,11 @@ from __future__ import annotations
 import re
 
 FORMATS = ("图片", "表格", "文本")
-_UID_RE = re.compile(r"(\d+)(?:_a)?", re.IGNORECASE)
-
+_UID_RE = re.compile(r"(\d+)_(\d+)", re.IGNORECASE)  # 匹配数字_数字
 
 def extract_uid(text: str) -> str | None:
     match = _UID_RE.search(text or "")
-    return match.group(1) if match else None
-
+    return match.group(1) if match else None  # 返回下划线前的数字
 
 def parse_format_and_limit(
     text: str,
