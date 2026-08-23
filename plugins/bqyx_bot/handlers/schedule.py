@@ -1,13 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 from datetime import datetime, timezone
 
+from ncatbot.core import registrar
+from ncatbot.event.qq import GroupMessageEvent
+
 from ..context import BqyxServices
-from ..models import MemberSnapshot, UnionSnapshot
-from ..schedule import capture_date, report_date, snapshot_from_member
+from ..errors import BotError
+from ..hooks import error_reply, query_limit
+from ..models import ContributionKind, MemberSnapshot, UnionSnapshot
+from ..parsing import parse_format_and_limit
+from ..schedule import (
+    YesterdayScore,
+    below_limit,
+    calculate_yesterday,
+    capture_date,
+    report_date,
+    snapshot_from_member,
+)
 
 LOG = logging.getLogger("bqyx_bot.schedule")
 
@@ -49,6 +63,31 @@ class ScheduleHandlers(BqyxServices):
             await asyncio.sleep(1)
         async with self._lock():
             await self._capture_unions()
+
+    @error_reply
+    @query_limit
+    @registrar.on_group_command("昨日贡献")
+    async def check_yesterday_contribution(self, event: GroupMessageEvent) -> None:
+        """昨日贡献：默认全部成员图片；加值 '昨日贡献 1400' 只显示低于该值的成员（bqyx_api 成员图片渲染）。"""
+        limit, _ = parse_format_and_limit(
+            event.message.text,
+            default_limit=None,
+            default_format="图片",
+        )
+        group_id = str(event.group_id)
+        user, army_id = await self.require_army(group_id)
+        army_cache: dict[int, list] = {}
+        day, scores = await self._yesterday_scores(
+            group_id,
+            army_id,
+            user=user,
+            army_cache=army_cache,
+        )
+        members = army_cache.get(army_id) or list(await user.get_members(army_id))
+        if limit is not None:
+            below = {score.uid for score in below_limit(scores, limit)}
+            members = [member for member in members if str(member.uid) in below]
+        await self.replies.send_members(event, members, "图片")
 
     def _lock(self) -> asyncio.Lock:
         lock = getattr(self, "_nightly_lock", None)
@@ -143,6 +182,30 @@ class ScheduleHandlers(BqyxServices):
             )
         await self.store.replace_union_snapshots(snapshot_day, rows)
         LOG.info("军队排行采集完成：%s 个军队（%s）", len(rows), snapshot_day)
+
+    async def _yesterday_scores(
+        self,
+        group_id: str,
+        army_id: int,
+        *,
+        user,
+        army_cache: dict[int, list],
+        captured_at: str | None = None,
+    ) -> tuple[str, list[YesterdayScore]]:
+        """昨日贡献：读昨天快照，实时拉取当前数据对比计算。"""
+        previous_day = report_date()
+        previous = await self.store.list_member_snapshots(group_id, previous_day)
+        if not previous:
+            raise BotError(f"没有 {previous_day} 的成员快照，请等晚上采集完成后再试。")
+        current = await self._live_snapshots(
+            user,
+            army_cache,
+            group_id,
+            army_id,
+            previous_day,
+            captured_at or datetime.now(timezone.utc).isoformat(),
+        )
+        return previous_day, calculate_yesterday(previous, current)
 
     async def _live_snapshots(
         self,
