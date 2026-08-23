@@ -77,7 +77,7 @@ class BindHandlers(BqyxServices):
         member = pick_member_for_uid(members, uid)
         if member is None:
             raise BotError(
-                f"账号「{username}」（UID {uid}）不在本群绑定的军队中，请确认账号或先绑定正确军队。"
+                f"账号「{username}」不在本群绑定的军队中，请确认账号或先绑定正确军队。"
             )
 
         player_name = getattr(getattr(member, "detail", None), "playerName", "") or ""
