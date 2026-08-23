@@ -126,11 +126,11 @@ def _fmt_local(iso_utc: str) -> str:
 class UnionRankHandlers(BqyxServices):
     @error_reply
     @yesterday_union_limit
-    @registrar.on_group_command("昨日日贡")
+    @registrar.on_group_command("昨日日贡排行")
     async def yesterday_union_rank(self, event: GroupMessageEvent) -> None:
         """昨日日贡排名：读昨日快照的当日新增贡献。
 
-        支持可选参数：'昨日日贡 90-110'（指定区间）或 '昨日日贡 100'（指定中心排名）。
+        支持可选参数：'昨日日贡排行 90-110'（指定区间）或 '昨日日贡排行 100'（指定中心排名）。
         人数变动对比前天快照标注（利用 3 天保留窗口）。
         """
         _, army_id = await self.require_army(str(event.group_id))
@@ -162,7 +162,7 @@ class UnionRankHandlers(BqyxServices):
 
     @error_reply
     @union_live_limit
-    @registrar.on_group_command("今日日贡")
+    @registrar.on_group_command("今日日贡排行")
     async def today_union_rank(self, event: GroupMessageEvent) -> None:
         """今日日贡排名：实时拉取当前数据，对比昨晚快照算当日新增。"""
         user, army_id = await self.require_army(str(event.group_id))
