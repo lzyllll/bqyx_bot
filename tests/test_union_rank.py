@@ -1,9 +1,14 @@
+from types import SimpleNamespace
+
+import pytest
+
 from bqyx_bot.handlers.union_rank import (
     MAX_WINDOW,
     RANK_WINDOW,
     _contribution_change,
     _member_change,
     _rank_rows,
+    _spec_need,
     parse_rank_range,
     resolve_rank_spec,
 )
@@ -121,3 +126,49 @@ def test_rank_rows_window_capped_at_max():
     assert len(rows) == MAX_WINDOW * 2 + 1
     assert rows[0]["rank"] == 50 - MAX_WINDOW
     assert rows[-1]["rank"] == 50 + MAX_WINDOW
+
+
+def test_spec_need():
+    assert _spec_need((90, 110), 5) == 110
+    assert _spec_need(100, 5) == 100
+    assert _spec_need(None, 5) == 5
+
+
+class FakeUnionUser:
+    """模拟 get_union_list 分页接口。"""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+
+    async def get_union_list(self, page_num: int, page_size: int):
+        start = (page_num - 1) * page_size
+        end = min(start + page_size, self.count)
+        if start >= self.count:
+            return SimpleNamespace(unions=[], count=self.count)
+        unions = [
+            SimpleNamespace(
+                id=1000 + i,
+                name=f"u{i}",
+                level=1,
+                members_num=10,
+                contribution=10000 - i,
+            )
+            for i in range(start, end)
+        ]
+        return SimpleNamespace(unions=unions, count=self.count)
+
+
+@pytest.mark.asyncio
+async def test_fetch_union_rank_respects_limit():
+    from bqyx_bot.handlers.schedule import fetch_union_rank
+
+    user = FakeUnionUser(1500)
+    got = await fetch_union_rank(user, limit=210)
+    assert len(got) == 210  # 按需拉取（每次扩 100 分页）
+    assert got[0].id == 1000
+
+    capped = await fetch_union_rank(user, limit=99999)
+    assert len(capped) == 1000  # 上限 1000
+
+    default = await fetch_union_rank(user)
+    assert len(default) == 1000  # 默认拉满
