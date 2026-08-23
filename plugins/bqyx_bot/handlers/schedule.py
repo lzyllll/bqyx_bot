@@ -51,6 +51,26 @@ async def fetch_union_rank(user, limit: int = UNION_RANK_LIMIT) -> list:
     return unions[:limit]
 
 
+def apply_yesterday_to_members(
+    members: list,
+    scores: list[YesterdayScore],
+    default: int = 0,
+) -> list:
+    """把成员对象的「日贡」字段（detail.conDay）覆盖为昨日贡献值，供 bqyx_api 图片/文本渲染。
+
+    昨日贡献只存在于 scores 里，不修改渲染数据源的话，图片/文本显示的是实时 conDay（今天）。
+    新成员（昨天不在军队、无分数）按 default（0）处理。
+    """
+    score_map = {score.uid: score.yesterday for score in scores}
+    for member in members:
+        detail = getattr(member, "detail", None)
+        if detail is None:
+            continue
+        uid = str(getattr(member, "uid", "") or "")
+        detail.conDay = score_map.get(uid, default)
+    return members
+
+
 class ScheduleHandlers(BqyxServices):
     async def capture_members(self) -> None:
         async with self._lock():
@@ -84,6 +104,8 @@ class ScheduleHandlers(BqyxServices):
             army_cache=army_cache,
         )
         members = army_cache.get(army_id) or list(await user.get_members(army_id))
+        # 渲染前把成员的「日贡」列覆盖为昨日贡献值，图片/文本显示昨日贡献而非实时今日贡献
+        apply_yesterday_to_members(members, scores)
         if limit is not None:
             below = {score.uid for score in below_limit(scores, limit)}
             members = [member for member in members if str(member.uid) in below]

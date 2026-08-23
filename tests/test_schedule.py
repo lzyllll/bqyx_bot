@@ -99,3 +99,24 @@ def test_snapshot_from_member_reads_detail():
     assert item.con_day == 1234
     assert item.this_week == 5600
 
+
+class _FakeDetail:
+    def __init__(self, con_day: int) -> None:
+        self.conDay = con_day
+
+
+class _FakeMember:
+    def __init__(self, uid: str, con_day: int) -> None:
+        self.uid = uid
+        self.detail = _FakeDetail(con_day)
+
+
+def test_apply_yesterday_to_members_overrides_con_day():
+    from bqyx_bot.handlers.schedule import apply_yesterday_to_members
+
+    members = [_FakeMember("1", 5), _FakeMember("2", 8)]
+    scores = [YesterdayScore("1", 0, "甲", 1400)]
+    apply_yesterday_to_members(members, scores)
+    assert members[0].detail.conDay == 1400  # 有分数 → 昨日贡献
+    assert members[1].detail.conDay == 0  # 新成员无分数 → 默认 0
+
