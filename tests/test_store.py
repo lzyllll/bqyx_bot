@@ -5,7 +5,7 @@ from bqyx_bot.store import SqliteStore
 
 @pytest.fixture
 async def store(tmp_path):
-    db = SqliteStore(tmp_path / "bqyx.db")
+    db = SqliteStore(tmp_path / "bqyx.db", retention_days=0)
     await db.init()
     return db
 
@@ -76,3 +76,53 @@ async def test_member_snapshot_roundtrip(store):
     )
     loaded = await store.list_member_snapshots("100", "2026-08-23")
     assert [item.uid for item in loaded] == ["u3"]
+
+
+async def test_snapshot_retention_prunes_old_days(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from bqyx_bot.models import MemberSnapshot
+
+    shanghai = timezone(timedelta(hours=8))
+    today = datetime.now(shanghai).date().isoformat()
+    yesterday = (datetime.now(shanghai) - timedelta(days=1)).date().isoformat()
+    old_day = (datetime.now(shanghai) - timedelta(days=5)).date().isoformat()
+
+    store = SqliteStore(tmp_path / "ret.db", retention_days=3)
+    await store.init()
+
+    def snap(day, uid):
+        return MemberSnapshot("100", 88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
+
+    await store.replace_member_snapshots("100", 88, old_day, [snap(old_day, "u0")])
+    await store.replace_member_snapshots("100", 88, yesterday, [snap(yesterday, "u1")])
+    await store.replace_member_snapshots("100", 88, today, [snap(today, "u2")])
+
+    # 再次写入当天（模拟 23:30 采集），触发旧快照清理
+    await store.replace_member_snapshots("100", 88, today, [snap(today, "u3")])
+
+    assert await store.list_member_snapshots("100", old_day) == []
+    assert [item.uid for item in await store.list_member_snapshots("100", yesterday)] == ["u1"]
+    assert [item.uid for item in await store.list_member_snapshots("100", today)] == ["u3"]
+
+
+async def test_snapshot_retention_disabled_keeps_all(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from bqyx_bot.models import MemberSnapshot
+
+    shanghai = timezone(timedelta(hours=8))
+    today = datetime.now(shanghai).date().isoformat()
+    old_day = (datetime.now(shanghai) - timedelta(days=30)).date().isoformat()
+
+    store = SqliteStore(tmp_path / "keep.db", retention_days=0)
+    await store.init()
+
+    def snap(day, uid):
+        return MemberSnapshot("100", 88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
+
+    await store.replace_member_snapshots("100", 88, old_day, [snap(old_day, "u0")])
+    await store.replace_member_snapshots("100", 88, today, [snap(today, "u1")])
+
+    assert len(await store.list_member_snapshots("100", old_day)) == 1
+    assert len(await store.list_member_snapshots("100", today)) == 1

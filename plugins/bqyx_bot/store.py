@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from .models import MemberSnapshot, UserBind
+
+SHANGHAI = timezone(timedelta(hours=8))
 
 
 def _utc_now() -> str:
@@ -15,8 +17,9 @@ def _utc_now() -> str:
 
 
 class SqliteStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, retention_days: int = 3) -> None:
         self.path = Path(path)
+        self.retention_days = retention_days
         self._lock = asyncio.Lock()
 
     async def init(self) -> None:
@@ -313,7 +316,24 @@ class SqliteStore:
                     for item in items
                 ],
             )
+            self._prune_old_snapshots(conn)
             conn.commit()
+
+    def _prune_old_snapshots(self, conn: sqlite3.Connection) -> None:
+        """删除超过保留天数的历史快照。
+
+        snapshot_date 是 yyyy-mm-dd 字符串，可直接按字典序比较。
+        保留最近 retention_days 份（含当天）；retention_days <= 0 表示不清理。
+        """
+        if self.retention_days <= 0:
+            return
+        cutoff = (
+            datetime.now(SHANGHAI) - timedelta(days=self.retention_days - 1)
+        ).date().isoformat()
+        conn.execute(
+            "DELETE FROM member_snapshot WHERE snapshot_date < ?",
+            (cutoff,),
+        )
 
     def _execute(self, sql: str, params: tuple[Any, ...] = ()) -> int:
         with self._connect() as conn:

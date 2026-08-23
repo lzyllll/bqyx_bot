@@ -33,7 +33,10 @@ class BqyxBotPlugin(
 
     async def on_load(self) -> None:
         self.settings = load_settings()
-        self.store = SqliteStore(self.workspace / "bqyx.db")
+        self.store = SqliteStore(
+            self.workspace / "bqyx.db",
+            retention_days=self.settings.snapshot_retention_days,
+        )
         await self.store.init()
         self.account = AccountService(self.settings, self.store, self.logger)
         self.replies = ReplyService(self.api, self.workspace)
