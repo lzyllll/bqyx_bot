@@ -8,7 +8,15 @@ from ncatbot.plugin import NcatBotPlugin
 
 from .account import AccountService
 from .config import Settings, load_settings
-from .handlers import BindHandlers, ExcludeHandlers, HelpHandlers, QueryHandlers, ScheduleHandlers, ThingsHandlers
+from .handlers import (
+    BindHandlers,
+    ExcludeHandlers,
+    HelpHandlers,
+    QueryHandlers,
+    ScheduleHandlers,
+    ThingsHandlers,
+    UnionRankHandlers,
+)
 from .reply import ReplyService
 from .store import SqliteStore
 
@@ -21,6 +29,7 @@ class BqyxBotPlugin(
     ThingsHandlers,
     ExcludeHandlers,
     ScheduleHandlers,
+    UnionRankHandlers,
 ):
     settings: Settings
     store: SqliteStore
@@ -51,6 +60,12 @@ class BqyxBotPlugin(
             callback=self.capture_members,
         ):
             self.logger.warning("注册 23:30 成员采集任务失败")
+        if not self.add_scheduled_task(
+            "capture_unions",
+            "23:59",
+            callback=self.capture_unions,
+        ):
+            self.logger.warning("注册 23:59 军队排行采集任务失败")
         self.logger.info("%s 已加载", self.name)
 
     async def on_close(self) -> None:

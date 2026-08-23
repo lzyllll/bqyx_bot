@@ -11,7 +11,7 @@ from ncatbot.types import MessageArray
 from ..context import BqyxServices
 from ..errors import BotError
 from ..hooks import error_reply, query_limit
-from ..models import ContributionKind, MemberSnapshot
+from ..models import ContributionKind, MemberSnapshot, UnionSnapshot
 from ..parsing import parse_format_and_limit
 from ..schedule import (
     YesterdayScore,
@@ -25,11 +25,39 @@ from ..schedule import (
 
 LOG = logging.getLogger("bqyx_bot.schedule")
 
+# 军队排行采集参数：前 1000 名，每页 100
+UNION_RANK_LIMIT = 1000
+UNION_PAGE_SIZE = 100
+
+
+async def fetch_union_rank(user) -> list:
+    """分页拉取军队排行，直到前 UNION_RANK_LIMIT 个或拉完。"""
+    unions = []
+    page = 1
+    while len(unions) < UNION_RANK_LIMIT:
+        page_result = await user.get_union_list(
+            page_num=page,
+            page_size=UNION_PAGE_SIZE,
+        )
+        items = list(page_result.unions)
+        if not items:
+            break
+        unions.extend(items)
+        total = int(getattr(page_result, "count", 0) or 0)
+        if page * UNION_PAGE_SIZE >= total or len(unions) >= UNION_RANK_LIMIT:
+            break
+        page += 1
+    return unions[:UNION_RANK_LIMIT]
+
 
 class ScheduleHandlers(BqyxServices):
     async def capture_members(self) -> None:
         async with self._lock():
             await self._capture_members()
+
+    async def capture_unions(self) -> None:
+        async with self._lock():
+            await self._capture_unions()
 
     @error_reply
     @query_limit
@@ -118,6 +146,54 @@ class ScheduleHandlers(BqyxServices):
             except Exception:
                 LOG.exception("采集群 %s 军队 %s 失败", group_id, army_id)
         LOG.info("成员采集完成：%s/%s 个群", ok, len(groups))
+
+    async def _capture_unions(self) -> None:
+        """23:59 采集前 1000 军队排行。
+
+        接口只有总贡献 contribution，没有今日贡献，因此只能在接近零点采集，
+        用相邻两天总贡献的差值作为当日日贡（today_contribution）。
+        """
+        user = await self.account.get_user()
+        snapshot_day = capture_date()
+        captured_at = datetime.now(timezone.utc).isoformat()
+
+        unions = await fetch_union_rank(user)
+        if not unions:
+            LOG.warning("军队排行采集为空，跳过（%s）", snapshot_day)
+            return
+
+        ranked = sorted(
+            unions,
+            key=lambda u: int(getattr(u, "contribution", 0) or 0),
+            reverse=True,
+        )[:UNION_RANK_LIMIT]
+
+        yesterday = report_date()
+        prev_map = {
+            item.union_id: item.contribution
+            for item in await self.store.list_union_snapshots(yesterday)
+        }
+
+        rows = []
+        for index, union in enumerate(ranked, 1):
+            contribution = int(getattr(union, "contribution", 0) or 0)
+            prev = prev_map.get(int(getattr(union, "id", 0) or 0))
+            today_contribution = max(contribution - prev, 0) if prev is not None else 0
+            rows.append(
+                UnionSnapshot(
+                    snapshot_date=snapshot_day,
+                    rank=index,
+                    union_id=int(getattr(union, "id", 0) or 0),
+                    name=str(getattr(union, "name", "") or ""),
+                    level=int(getattr(union, "level", 0) or 0),
+                    members_num=int(getattr(union, "members_num", 0) or 0),
+                    contribution=contribution,
+                    today_contribution=today_contribution,
+                    captured_at=captured_at,
+                )
+            )
+        await self.store.replace_union_snapshots(snapshot_day, rows)
+        LOG.info("军队排行采集完成：%s 个军队（%s）", len(rows), snapshot_day)
 
     async def _yesterday_scores(
         self,

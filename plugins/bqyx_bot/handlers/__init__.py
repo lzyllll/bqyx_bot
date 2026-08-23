@@ -4,6 +4,7 @@ from .help import HelpHandlers
 from .query import QueryHandlers
 from .schedule import ScheduleHandlers
 from .things import ThingsHandlers
+from .union_rank import UnionRankHandlers
 
 __all__ = [
     "BindHandlers",
@@ -12,4 +13,5 @@ __all__ = [
     "QueryHandlers",
     "ScheduleHandlers",
     "ThingsHandlers",
+    "UnionRankHandlers",
 ]

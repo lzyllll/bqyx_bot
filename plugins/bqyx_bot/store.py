@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import MemberSnapshot, UserBind
+from .models import MemberSnapshot, UnionSnapshot, UserBind
 
 SHANGHAI = timezone(timedelta(hours=8))
 
@@ -190,6 +190,36 @@ class SqliteStore:
         )
         return [self._row_to_snapshot(row) for row in rows]
 
+    async def replace_union_snapshots(
+        self,
+        snapshot_date: str,
+        items: list[UnionSnapshot],
+    ) -> None:
+        """覆盖式写入某一天的军队排行快照（前 1000 名）。
+
+        先删除该 snapshot_date 的旧记录，再整体插入当天新快照，
+        并顺手清理超过保留天数的历史军队快照。
+        """
+        await self._run(
+            self._replace_union_snapshots,
+            str(snapshot_date),
+            items,
+        )
+
+    async def list_union_snapshots(self, snapshot_date: str) -> list[UnionSnapshot]:
+        rows = await self._run(
+            self._fetchall,
+            """
+            SELECT snapshot_date, rank, union_id, name, level,
+                   members_num, contribution, today_contribution, captured_at
+            FROM union_snapshot
+            WHERE snapshot_date = ?
+            ORDER BY rank
+            """,
+            (str(snapshot_date),),
+        )
+        return [self._row_to_union_snapshot(row) for row in rows]
+
     async def get_session(self) -> tuple[str, dict[str, str]] | None:
         row = await self._run(
             self._fetchone,
@@ -270,6 +300,20 @@ class SqliteStore:
                     captured_at TEXT NOT NULL,
                     PRIMARY KEY (group_id, snapshot_date, uid, arch_index)
                 );
+                -- 军队排行快照：每天 23:59 全量覆盖写入一份（前 1000 名）。
+                -- 接口只有总贡献，today_contribution 由相邻两天快照对比得出。
+                CREATE TABLE IF NOT EXISTS union_snapshot (
+                    snapshot_date TEXT NOT NULL,
+                    rank INTEGER NOT NULL,
+                    union_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    level INTEGER NOT NULL DEFAULT 0,
+                    members_num INTEGER NOT NULL DEFAULT 0,
+                    contribution INTEGER NOT NULL DEFAULT 0,
+                    today_contribution INTEGER NOT NULL DEFAULT 0,
+                    captured_at TEXT NOT NULL,
+                    PRIMARY KEY (snapshot_date, union_id)
+                );
                 """
             )
             self._ensure_snapshot_contribution(conn)
@@ -335,6 +379,56 @@ class SqliteStore:
             (cutoff,),
         )
 
+    def _replace_union_snapshots(
+        self,
+        snapshot_date: str,
+        items: list[UnionSnapshot],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM union_snapshot WHERE snapshot_date = ?",
+                (snapshot_date,),
+            )
+            conn.executemany(
+                """
+                INSERT INTO union_snapshot (
+                    snapshot_date, rank, union_id, name, level,
+                    members_num, contribution, today_contribution, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        snapshot_date,
+                        int(item.rank),
+                        int(item.union_id),
+                        item.name,
+                        int(item.level),
+                        int(item.members_num),
+                        int(item.contribution),
+                        int(item.today_contribution),
+                        item.captured_at,
+                    )
+                    for item in items
+                ],
+            )
+            self._prune_old_union_snapshots(conn)
+            conn.commit()
+
+    def _prune_old_union_snapshots(self, conn: sqlite3.Connection) -> None:
+        """删除超过保留天数的军队排行快照（保留 3 天）。
+
+        retention_days <= 0 表示不清理。
+        """
+        if self.retention_days <= 0:
+            return
+        cutoff = (
+            datetime.now(SHANGHAI) - timedelta(days=self.retention_days - 1)
+        ).date().isoformat()
+        conn.execute(
+            "DELETE FROM union_snapshot WHERE snapshot_date < ?",
+            (cutoff,),
+        )
+
     def _execute(self, sql: str, params: tuple[Any, ...] = ()) -> int:
         with self._connect() as conn:
             cursor = conn.execute(sql, params)
@@ -371,4 +465,18 @@ class SqliteStore:
             con_day=int(row[7]),
             this_week=int(row[8]),
             captured_at=str(row[9]),
+        )
+
+    @staticmethod
+    def _row_to_union_snapshot(row: tuple[Any, ...]) -> UnionSnapshot:
+        return UnionSnapshot(
+            snapshot_date=str(row[0]),
+            rank=int(row[1]),
+            union_id=int(row[2]),
+            name=str(row[3]),
+            level=int(row[4]),
+            members_num=int(row[5]),
+            contribution=int(row[6]),
+            today_contribution=int(row[7]),
+            captured_at=str(row[8]),
         )

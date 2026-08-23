@@ -126,3 +126,46 @@ async def test_snapshot_retention_disabled_keeps_all(tmp_path):
 
     assert len(await store.list_member_snapshots("100", old_day)) == 1
     assert len(await store.list_member_snapshots("100", today)) == 1
+
+
+async def test_union_snapshot_roundtrip(store):
+    from bqyx_bot.models import UnionSnapshot
+
+    items = [
+        UnionSnapshot("2026-08-23", 1, 1001, "甲军", 5, 120, 90000, 3000, "t1"),
+        UnionSnapshot("2026-08-23", 2, 1002, "乙军", 4, 90, 80000, 2500, "t1"),
+    ]
+    await store.replace_union_snapshots("2026-08-23", items)
+    loaded = await store.list_union_snapshots("2026-08-23")
+    assert [(item.union_id, item.rank) for item in loaded] == [(1001, 1), (1002, 2)]
+    assert loaded[0].today_contribution == 3000
+
+    # 覆盖式写入同一天
+    await store.replace_union_snapshots(
+        "2026-08-23",
+        [UnionSnapshot("2026-08-23", 1, 1003, "丙军", 3, 60, 50000, 1000, "t2")],
+    )
+    loaded = await store.list_union_snapshots("2026-08-23")
+    assert [item.union_id for item in loaded] == [1003]
+
+
+async def test_union_snapshot_retention_prunes_old_days(tmp_path):
+    from datetime import datetime, timedelta, timezone
+
+    from bqyx_bot.models import UnionSnapshot
+
+    shanghai = timezone(timedelta(hours=8))
+    today = datetime.now(shanghai).date().isoformat()
+    old_day = (datetime.now(shanghai) - timedelta(days=5)).date().isoformat()
+
+    store = SqliteStore(tmp_path / "uret.db", retention_days=3)
+    await store.init()
+
+    def row(day, uid):
+        return UnionSnapshot(day, 1, uid, "n" + str(uid), 1, 10, 100, 10, "t")
+
+    await store.replace_union_snapshots(old_day, [row(old_day, 1)])
+    await store.replace_union_snapshots(today, [row(today, 2)])
+
+    assert await store.list_union_snapshots(old_day) == []
+    assert [item.union_id for item in await store.list_union_snapshots(today)] == [2]

@@ -52,6 +52,28 @@ class MemberSnapshot:
     captured_at: str
 
 
+@dataclass(frozen=True)
+class UnionSnapshot:
+    """某一天 23:59 采集的军队排行快照（前 1000 名）。
+
+    接口（get_union_list）只提供总贡献 contribution，没有「今日贡献」，
+    所以只能在接近零点采集，用相邻两天总贡献的差值计算日贡：
+    - contribution: 当天采集到的总贡献（服务端累计值）
+    - today_contribution: 当日新增贡献 = 本次 contribution - 昨日快照 contribution
+    「昨日日贡」即昨日快照的 today_contribution，直接读库即可。
+    """
+
+    snapshot_date: str
+    rank: int
+    union_id: int
+    name: str
+    level: int
+    members_num: int
+    contribution: int  # 总贡献（累计值）
+    today_contribution: int  # 当日新增贡献（相邻两天快照对比）
+    captured_at: str
+
+
 class ContributionKind(StrEnum):
     DAILY = "daily"
     WEEKLY = "weekly"
