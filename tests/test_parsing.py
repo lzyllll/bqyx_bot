@@ -18,12 +18,13 @@ def test_parse_limit_and_format_in_any_order():
 
 
 def test_extract_uid_from_digits_or_suffix():
-    # 格式：数字_数字（UID_存档），提取下划线前的数字
+    # 纯数字，或 数字_数字（UID_存档），提取数字部分
+    assert extract_uid("123456") == "123456"
     assert extract_uid("123456_1") == "123456"
     assert extract_uid("UID:123456_1") == "123456"
+    assert extract_uid("绑定uid 123456") == "123456"
     assert extract_uid("绑定uid 123456_1") == "123456"
-    assert extract_uid("绑定uid 123456_1 4") == "123456"
-    assert extract_uid("123456") is None
-    assert extract_uid("123456_a") is None
+    assert extract_uid("绑定uid 123456 4") == "123456"
+    assert extract_uid("123456_a") == "123456"
     assert extract_uid("abc") is None
     assert extract_uid("") is None

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 FORMATS = ("图片", "表格", "文本")
-_UID_RE = re.compile(r"(\d+)_(\d+)", re.IGNORECASE)  # 匹配数字_数字
+_UID_RE = re.compile(r"(\d+)(?:_\d+)?")  # 纯数字，或 数字_数字（UID_存档），提取数字部分
 
 def extract_uid(text: str) -> str | None:
     match = _UID_RE.search(text or "")
