@@ -1,6 +1,7 @@
 from bqyx_bot.handlers.union_rank import (
     MAX_WINDOW,
     RANK_WINDOW,
+    _contribution_change,
     _member_change,
     _rank_rows,
     parse_rank_range,
@@ -67,6 +68,14 @@ def test_member_change_marks_diff_only():
     assert _member_change(87, prev) == "-3"
     assert _member_change(90, prev) is None
     assert _member_change(90, None) is None
+
+
+def test_contribution_change_marks_diff_only():
+    prev = _row(1, contribution=10000, today_contribution=5)
+    assert _contribution_change(10500, prev) == "+500"
+    assert _contribution_change(9600, prev) == "-400"
+    assert _contribution_change(10000, prev) is None
+    assert _contribution_change(10000, None) is None
 
 
 def test_parse_rank_range():

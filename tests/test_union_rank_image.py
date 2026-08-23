@@ -76,6 +76,12 @@ async def test_render_union_rank_images():
         window=10,
     )[0]
 
+    # 军队总贡献排行：注入人数与贡献变动标注
+    total_rows = _rank_rows(items, "contribution", army_id)[0]
+    total_rows[6]["member_change"] = "+2"
+    total_rows[6]["contribution_change"] = "+3200"  # 本军
+    total_rows[3]["contribution_change"] = "-1500"
+
     outputs = [
         await _render(
             "昨日日贡排名",
@@ -89,7 +95,7 @@ async def test_render_union_rank_images():
         ),
         await _render(
             "军队总贡献排行",
-            _rank_rows(items, "contribution", army_id)[0],
+            total_rows,
             "union_rank_total.png",
         ),
         await _render(

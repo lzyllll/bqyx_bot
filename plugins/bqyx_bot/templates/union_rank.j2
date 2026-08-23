@@ -183,7 +183,7 @@
           <div class="rank-num">{{ row.rank }}</div>
         </div>
         <div class="name" title="{{ row.name }}">{{ row.name }}</div>
-        <div class="num">{{ row.contribution }}</div>
+        <div class="num">{{ row.contribution }}{% if row.contribution_change %}<span class="change {{ 'up' if row.contribution_change.startswith('+') else 'down' }}">{{ row.contribution_change }}</span>{% endif %}</div>
         <div class="score">{{ row.today_contribution }}</div>
         <div class="num" style="text-align: right;">{{ row.members_num }}{% if row.member_change %}<span class="change {{ 'up' if row.member_change.startswith('+') else 'down' }}">{{ row.member_change }}</span>{% endif %}</div>
       </div>

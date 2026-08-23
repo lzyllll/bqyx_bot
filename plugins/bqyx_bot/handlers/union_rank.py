@@ -23,10 +23,20 @@ MAX_WINDOW = 20
 
 
 def _member_change(current_members: int, prev: UnionSnapshot | None) -> str | None:
-    """今日军队人数相对昨晚快照的变动标注；无变动或缺少基线返回 None。"""
+    """军队人数相对基线快照的变动标注；无变动或缺少基线返回 None。"""
     if prev is None:
         return None
     diff = int(current_members) - int(prev.members_num)
+    if diff == 0:
+        return None
+    return f"+{diff}" if diff > 0 else str(diff)
+
+
+def _contribution_change(current_contribution: int, prev: UnionSnapshot | None) -> str | None:
+    """总贡献相对基线快照的变动标注；无变动或缺少基线返回 None。"""
+    if prev is None:
+        return None
+    diff = int(current_contribution) - int(prev.contribution)
     if diff == 0:
         return None
     return f"+{diff}" if diff > 0 else str(diff)
@@ -141,14 +151,7 @@ class UnionRankHandlers(BqyxServices):
             raise BotError("指定的排名范围无效。")
         if spec is None and highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
-        prev_day = (datetime.now(SHANGHAI) - timedelta(days=2)).date().isoformat()
-        prev_map = {
-            item.union_id: item
-            for item in await self.store.list_union_snapshots(prev_day)
-        }
-        for row in rows:
-            prev = prev_map.get(int(row["union_id"]))
-            row["member_change"] = _member_change(row["members_num"], prev)
+        await self._with_member_change(rows)
         await self._send_rank(
             event,
             title="昨日日贡排名",
@@ -240,6 +243,7 @@ class UnionRankHandlers(BqyxServices):
             raise BotError("指定的排名范围无效。")
         if spec is None and highlight is None:
             raise BotError("本群军队不在前 1000 排行中。")
+        await self._with_member_change(rows, contribution_change=True)
         await self._send_rank(
             event,
             title="军队总贡献排行",
@@ -247,6 +251,19 @@ class UnionRankHandlers(BqyxServices):
             rows=rows,
             captured_at=snapshots[0].captured_at,
         )
+
+    async def _with_member_change(self, rows: list[dict], *, contribution_change: bool = False) -> None:
+        """为展示行注入人数/贡献变动标注（对比前天快照，利用 3 天保留窗口）。"""
+        prev_day = (datetime.now(SHANGHAI) - timedelta(days=2)).date().isoformat()
+        prev_map = {
+            item.union_id: item
+            for item in await self.store.list_union_snapshots(prev_day)
+        }
+        for row in rows:
+            prev = prev_map.get(int(row["union_id"]))
+            row["member_change"] = _member_change(row["members_num"], prev)
+            if contribution_change:
+                row["contribution_change"] = _contribution_change(row["contribution"], prev)
 
     async def _send_rank(
         self,
