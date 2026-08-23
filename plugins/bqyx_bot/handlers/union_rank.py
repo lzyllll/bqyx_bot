@@ -233,15 +233,14 @@ class UnionRankHandlers(BqyxServices):
     @total_union_limit
     @registrar.on_group_command("军队排行")
     async def union_rank(self, event: GroupMessageEvent) -> None:
-        """军队排行：快照 cache 优先；cache 不足时实时渐进扩大（先扩 10，再每次 100，上限 1000）。"""
+        """军队排行：实时拉取当前总贡献排行；昨晚快照仅作本军位置参考 cache（渐进扩大，上限 1000）。"""
         user, army_id = await self.require_army(str(event.group_id))
         day = report_date()
-        snapshots = await self.store.list_union_snapshots(day)
         spec = parse_rank_range(event.message.text)
-        if not snapshots or _spec_need(spec, len(snapshots)) > len(snapshots):
-            snapshots = await self._live_union_snapshots(user, day, spec, snapshots)
-            if not snapshots:
-                raise BotError(f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。")
+        cache = await self.store.list_union_snapshots(day)
+        snapshots = await self._live_union_snapshots(user, day, spec, army_id, cache)
+        if not snapshots:
+            raise BotError("获取军队排行失败，请稍后再试。")
         center_rank, window = resolve_rank_spec(spec, len(snapshots))
         rows, highlight = _rank_rows(
             snapshots,
@@ -268,33 +267,54 @@ class UnionRankHandlers(BqyxServices):
         user,
         day: str,
         spec: tuple[int, int] | int | None,
+        army_id: int,
         cache: list[UnionSnapshot],
     ) -> list[UnionSnapshot]:
-        """快照 cache 不足时实时渐进扩大：先扩 10，再每次扩 100，上限 1000。"""
-        need = max(_spec_need(spec, 0), len(cache) + 10)
-        unions = await fetch_union_rank(user, min(need, UNION_RANK_LIMIT))
-        if not unions:
-            return cache
+        """实时拉取军队排行（渐进扩大：先扩 10 再每次扩 100，上限 1000）。
+
+        昨晚快照仅作参考 cache：本军模式用它估算本军位置（+10 起步），
+        找不到本军再按页 100 扩大；指定范围模式直接按范围上界拉取。
+        """
+        need = _spec_need(spec, 0)
+        if need == 0:
+            ref_rank = next(
+                (item.rank for item in cache if int(item.union_id) == int(army_id)),
+                None,
+            )
+            need = ref_rank + 10 if ref_rank else UNION_RANK_LIMIT
+        limit = min(max(need, 10), UNION_RANK_LIMIT)
         cache_map = {item.union_id: item for item in cache}
         captured_at = datetime.now(timezone.utc).isoformat()
-        items = []
-        for union in unions:
-            union_id = int(getattr(union, "id", 0) or 0)
-            prev_item = cache_map.get(union_id)
-            items.append(
-                UnionSnapshot(
-                    snapshot_date=day,
-                    rank=0,
-                    union_id=union_id,
-                    name=str(getattr(union, "name", "") or ""),
-                    level=int(getattr(union, "level", 0) or 0),
-                    members_num=int(getattr(union, "members_num", 0) or 0),
-                    contribution=int(getattr(union, "contribution", 0) or 0),
-                    today_contribution=prev_item.today_contribution if prev_item else 0,
-                    captured_at=captured_at,
+
+        while True:
+            unions = await fetch_union_rank(user, limit)
+            if not unions:
+                return []
+            items = []
+            for union in unions:
+                union_id = int(getattr(union, "id", 0) or 0)
+                prev_item = cache_map.get(union_id)
+                items.append(
+                    UnionSnapshot(
+                        snapshot_date=day,
+                        rank=0,
+                        union_id=union_id,
+                        name=str(getattr(union, "name", "") or ""),
+                        level=int(getattr(union, "level", 0) or 0),
+                        members_num=int(getattr(union, "members_num", 0) or 0),
+                        contribution=int(getattr(union, "contribution", 0) or 0),
+                        today_contribution=prev_item.today_contribution if prev_item else 0,
+                        captured_at=captured_at,
+                    )
                 )
-            )
-        return items
+            if spec is not None or len(unions) >= UNION_RANK_LIMIT:
+                # 指定范围：拉到范围上界即可；上限 1000 兜底
+                return items
+            if any(int(item.union_id) == int(army_id) for item in items):
+                return items  # 本军已覆盖
+            if limit >= UNION_RANK_LIMIT:
+                return items
+            limit = min(limit + 100, UNION_RANK_LIMIT)
 
     async def _with_member_change(self, rows: list[dict], *, contribution_change: bool = False) -> None:
         """为展示行注入人数/贡献变动标注（对比前天快照，利用 3 天保留窗口）。"""
