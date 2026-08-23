@@ -11,13 +11,8 @@ from ncatbot.event.qq import GroupMessageEvent
 
 from ..context import BqyxServices
 from ..errors import BotError
-from ..hooks import error_reply, query_limit
-from ..models import ContributionKind, MemberSnapshot, UnionSnapshot
-from ..parsing import parse_format_and_limit
+from ..models import MemberSnapshot, UnionSnapshot
 from ..schedule import (
-    YesterdayScore,
-    below_limit,
-    calculate_yesterday,
     capture_date,
     report_date,
     snapshot_from_member,
@@ -51,33 +46,6 @@ async def fetch_union_rank(user, limit: int = UNION_RANK_LIMIT) -> list:
     return unions[:limit]
 
 
-def apply_yesterday_to_members(
-    members: list,
-    scores: list[YesterdayScore],
-    default: int = 0,
-) -> list:
-    """把成员对象的「日贡」字段（detail.conDay）覆盖为昨日贡献值，供 bqyx_api 图片/文本渲染。
-
-    昨日贡献只存在于 scores 里，不修改渲染数据源的话，图片/文本显示的是实时 conDay（今天）。
-    新成员（昨天不在军队、无分数）按 default（0）处理。
-    """
-    score_map = {score.uid: score.yesterday for score in scores}
-    for member in members:
-        detail = getattr(member, "detail", None)
-        if detail is None:
-            continue
-        uid = str(getattr(member, "uid", "") or "")
-        detail.conDay = score_map.get(uid, default)
-    return members
-
-
-def sort_members_by_yesterday(members: list, scores: list[YesterdayScore]) -> list:
-    """按昨日贡献降序排列成员（渲染顺序）；无分数成员视为 0 排后面。"""
-    score_map = {score.uid: score.yesterday for score in scores}
-    members.sort(key=lambda m: -score_map.get(str(getattr(m, "uid", "") or ""), 0))
-    return members
-
-
 class ScheduleHandlers(BqyxServices):
     async def capture_members(self) -> None:
         async with self._lock():
@@ -90,35 +58,6 @@ class ScheduleHandlers(BqyxServices):
             await asyncio.sleep(1)
         async with self._lock():
             await self._capture_unions()
-
-    @error_reply
-    @query_limit
-    @registrar.on_group_command("昨日贡献")
-    async def check_yesterday_contribution(self, event: GroupMessageEvent) -> None:
-        """昨日贡献：默认全部成员图片；加值 '昨日贡献 1400' 只显示低于该值的成员（bqyx_api 成员图片渲染）。"""
-        limit, _ = parse_format_and_limit(
-            event.message.text,
-            default_limit=None,
-            default_format="图片",
-        )
-        group_id = str(event.group_id)
-        user, army_id = await self.require_army(group_id)
-        army_cache: dict[int, list] = {}
-        day, scores = await self._yesterday_scores(
-            group_id,
-            army_id,
-            user=user,
-            army_cache=army_cache,
-        )
-        members = army_cache.get(army_id) or list(await user.get_members(army_id))
-        # 渲染前把成员的「日贡」列覆盖为昨日贡献值，图片/文本显示昨日贡献而非实时今日贡献
-        apply_yesterday_to_members(members, scores)
-        # 按昨日贡献降序渲染（游戏接口返回顺序与贡献无关）
-        sort_members_by_yesterday(members, scores)
-        if limit is not None:
-            below = {score.uid for score in below_limit(scores, limit)}
-            members = [member for member in members if str(member.uid) in below]
-        await self.replies.send_members(event, members, "图片")
 
     def _lock(self) -> asyncio.Lock:
         lock = getattr(self, "_nightly_lock", None)
@@ -214,30 +153,6 @@ class ScheduleHandlers(BqyxServices):
             )
         await self.store.replace_union_snapshots(snapshot_day, rows)
         LOG.info("军队排行采集完成：%s 个军队（%s）", len(rows), snapshot_day)
-
-    async def _yesterday_scores(
-        self,
-        group_id: str,
-        army_id: int,
-        *,
-        user,
-        army_cache: dict[int, list],
-        captured_at: str | None = None,
-    ) -> tuple[str, list[YesterdayScore]]:
-        """昨日贡献：读昨天快照，实时拉取当前数据对比计算。"""
-        previous_day = report_date()
-        previous = await self.store.list_member_snapshots(group_id, previous_day)
-        if not previous:
-            raise BotError(f"没有 {previous_day} 的成员快照，请等晚上采集完成后再试。")
-        current = await self._live_snapshots(
-            user,
-            army_cache,
-            group_id,
-            army_id,
-            previous_day,
-            captured_at or datetime.now(timezone.utc).isoformat(),
-        )
-        return previous_day, calculate_yesterday(previous, current)
 
     async def _live_snapshots(
         self,
