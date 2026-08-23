@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from ncatbot.core import registrar
@@ -56,6 +57,10 @@ class ScheduleHandlers(BqyxServices):
             await self._capture_members()
 
     async def capture_unions(self) -> None:
+        # 23:59 触发后先等 50 秒（约 23:59:50），更接近零点，确保当日贡献数据完整
+        deadline = time.monotonic() + 50
+        while time.monotonic() < deadline:
+            await asyncio.sleep(1)
         async with self._lock():
             await self._capture_unions()
 
