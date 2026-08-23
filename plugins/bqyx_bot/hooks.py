@@ -81,13 +81,23 @@ class GroupRateLimiter:
 
     第一次超限会回复提示；之后如果还继续发，直接忽略，
     并且刷新冷却窗口，停止提问后才恢复。
+
+    name 用于区分命令：窗口 key 为 ``name:group_id``，
+    即使多个命令共用同一个限流器实例，各自计数互不影响。
     """
 
-    def __init__(self, max_calls: int, period: float) -> None:
+    def __init__(self, max_calls: int, period: float, name: str = "") -> None:
         self.max_calls = max_calls
         self.period = period
+        self.name = name
         self._windows: dict[str, deque[float]] = {}
         self._warned: set[str] = set()
+
+    def _key(self, event: Any) -> str | None:
+        group_id = _group_id(event)
+        if group_id is None:
+            return None
+        return f"{self.name}:{group_id}" if self.name else group_id
 
     def _trim(self, key: str, now: float) -> deque[float]:
         window = self._windows.setdefault(key, deque())
@@ -100,7 +110,7 @@ class GroupRateLimiter:
 
     async def _check(self, event: Any) -> bool:
         """返回 True 表示放行，False 表示应跳过 handler。"""
-        key = _group_id(event)
+        key = self._key(event)
         if key is None:
             return True
 
@@ -136,6 +146,7 @@ class GroupRateLimiter:
 
 query_limit = GroupRateLimiter(max_calls=15, period=60)
 auto_bind_limit = GroupRateLimiter(max_calls=3, period=60)
-# 军队排行：实时查询（今日日贡）2 次/分；快照查询（昨日日贡/军队排行）6 次/分
-union_live_limit = GroupRateLimiter(max_calls=2, period=60)
-union_snapshot_limit = GroupRateLimiter(max_calls=6, period=60)
+# 军队排行：实时查询（今日日贡）2 次/分；快照查询（昨日日贡/军队排行）各 6 次/分
+union_live_limit = GroupRateLimiter(max_calls=2, period=60, name="今日日贡")
+yesterday_union_limit = GroupRateLimiter(max_calls=6, period=60, name="昨日日贡")
+total_union_limit = GroupRateLimiter(max_calls=6, period=60, name="军队排行")

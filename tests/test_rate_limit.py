@@ -56,3 +56,13 @@ async def test_rate_limit_keeps_blocking_while_still_asking(monkeypatch):
     clock["now"] = 109.5
     assert await handler(SimpleNamespace(), event) is None
     assert len(event.replies) == 1
+
+
+def test_rate_limiter_name_prefixes_key():
+    limiter = GroupRateLimiter(max_calls=1, period=60, name="今日日贡")
+    assert limiter._key(FakeEvent("100")) == "今日日贡:100"
+    # 无 name 时兼容原行为：key 就是群 ID
+    plain = GroupRateLimiter(max_calls=1, period=60)
+    assert plain._key(FakeEvent("100")) == "100"
+    # 无群 ID 时返回 None（不限流）
+    assert limiter._key(FakeEvent(group_id=None)) is None
