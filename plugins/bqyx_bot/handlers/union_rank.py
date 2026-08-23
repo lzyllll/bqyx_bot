@@ -16,8 +16,8 @@ from ..schedule import SHANGHAI, report_date
 from ..union_rank_render import UnionRankRenderer
 from .schedule import fetch_union_rank
 
-# 以本军排名为中心，前后各取 10 名
-RANK_WINDOW = 10
+# 以本军排名为中心，前后各取 6 名
+RANK_WINDOW = 6
 
 
 def _rank_rows(
