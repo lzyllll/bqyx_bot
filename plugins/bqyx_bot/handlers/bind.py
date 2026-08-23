@@ -42,9 +42,7 @@ class BindHandlers(BqyxServices):
         members = await user.get_members(army_id)
         member = pick_member_for_uid(members, resolved_uid)
         if member is None:
-            raise BotError(
-                f"未在本群军队中找到 UID {resolved_uid}，请确认 UID 或先绑定正确军队。"
-            )
+            raise BotError("未在本群军队中找到该成员，请确认 UID 或先绑定正确军队。")
         await self._save_bind(event, resolved_uid, int(member.index))
 
     @error_reply
@@ -95,7 +93,7 @@ class BindHandlers(BqyxServices):
         if not bind:
             raise UserNotBoundError()
         await event.reply(
-            f"您已绑定游戏 UID: {bind.uid}，存档: {bind.arch_index}"
+            f"您已绑定游戏账号，存档: {bind.arch_index}"
         )
 
     # @error_reply
@@ -219,6 +217,6 @@ class BindHandlers(BqyxServices):
         await self.store.set_user_bind(str(event.group_id), qq_id, uid, arch_index)
         suffix = f"（{extra}）" if extra else ""
         await event.reply(
-            f"QQ {qq_id} 已绑定 UID {uid} / 存档 {arch_index}{suffix}"
+            f"QQ {qq_id} 已绑定成功 / 存档 {arch_index}{suffix}"
         )
 
