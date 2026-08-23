@@ -28,15 +28,27 @@ class GameMember:
 
 @dataclass(frozen=True)
 class MemberSnapshot:
+    """某军队成员在某一天（23:30 采集）的贡献指标快照。
+
+    注意：这里存的是「当日全量指标快照」，不是「昨日贡献」。
+    「昨日贡献」是派生值，由前后两天快照对比计算得出
+    （`yesterday_contribution = (contribution - con_day) 的差值`），并不落库。
+
+    字段语义（均来自 4399 游戏接口）：
+    - contribution: 游戏总贡献（服务端累计值）
+    - con_day: 今日贡献（游戏内每天 0 点刷新）
+    - this_week: 本周贡献（按周代码从 conObj 解析）
+    """
+
     group_id: str
     army_id: int
     snapshot_date: str
     uid: str
     arch_index: int
     nickname: str
-    contribution: int
-    con_day: int
-    this_week: int
+    contribution: int  # 总贡献（累计值）
+    con_day: int  # 今日贡献（0 点刷新）
+    this_week: int  # 本周贡献
     captured_at: str
 
 

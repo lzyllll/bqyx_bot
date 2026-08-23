@@ -156,6 +156,11 @@ class SqliteStore:
         snapshot_date: str,
         items: list[MemberSnapshot],
     ) -> None:
+        """覆盖式写入某群军队在某一天（snapshot_date）的成员快照。
+
+        先删除该 group_id + snapshot_date 的旧记录，再整体插入当天新快照，
+        保证每个「群 × 日期」只有一份最新采集结果。
+        """
         await self._run(
             self._replace_member_snapshots,
             str(group_id),
@@ -246,6 +251,9 @@ class SqliteStore:
                     cookies_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                -- 成员每日贡献快照：每天 23:30 全量覆盖写入一份，
+                -- 存当天每个成员的总贡献/今日贡献/本周贡献等指标。
+                -- 「昨日贡献」不在此表中，由前后两天快照对比计算得出。
                 CREATE TABLE IF NOT EXISTS member_snapshot (
                     group_id TEXT NOT NULL,
                     army_id INTEGER NOT NULL,
