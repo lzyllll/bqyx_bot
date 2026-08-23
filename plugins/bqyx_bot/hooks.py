@@ -136,3 +136,6 @@ class GroupRateLimiter:
 
 query_limit = GroupRateLimiter(max_calls=15, period=60)
 auto_bind_limit = GroupRateLimiter(max_calls=3, period=60)
+# 军队排行：实时查询（今日日贡）2 次/分；快照查询（昨日日贡/军队排行）6 次/分
+union_live_limit = GroupRateLimiter(max_calls=2, period=60)
+union_snapshot_limit = GroupRateLimiter(max_calls=6, period=60)

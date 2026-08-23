@@ -11,7 +11,7 @@ from ncatbot.event.qq import GroupMessageEvent
 
 from ..context import BqyxServices
 from ..errors import BotError
-from ..hooks import error_reply, query_limit
+from ..hooks import error_reply, union_live_limit, union_snapshot_limit
 from ..models import UnionSnapshot
 from ..schedule import SHANGHAI, report_date
 from ..union_rank_render import UnionRankRenderer
@@ -125,7 +125,7 @@ def _fmt_local(iso_utc: str) -> str:
 
 class UnionRankHandlers(BqyxServices):
     @error_reply
-    @query_limit
+    @union_snapshot_limit
     @registrar.on_group_command("昨日日贡")
     async def yesterday_union_rank(self, event: GroupMessageEvent) -> None:
         """昨日日贡排名：读昨日快照的当日新增贡献。
@@ -161,7 +161,7 @@ class UnionRankHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @union_live_limit
     @registrar.on_group_command("今日日贡")
     async def today_union_rank(self, event: GroupMessageEvent) -> None:
         """今日日贡排名：实时拉取当前数据，对比昨晚快照算当日新增。"""
@@ -221,7 +221,7 @@ class UnionRankHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @union_snapshot_limit
     @registrar.on_group_command("军队排行")
     async def union_rank(self, event: GroupMessageEvent) -> None:
         """军队排行：最新快照按总贡献排序。支持 '军队排行 90-110' 或 '军队排行 100'。"""
