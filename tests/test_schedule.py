@@ -120,3 +120,17 @@ def test_apply_yesterday_to_members_overrides_con_day():
     assert members[0].detail.conDay == 1400  # 有分数 → 昨日贡献
     assert members[1].detail.conDay == 0  # 新成员无分数 → 默认 0
 
+
+def test_sort_members_by_yesterday_desc():
+    from bqyx_bot.handlers.schedule import sort_members_by_yesterday
+
+    members = [_FakeMember("1", 0), _FakeMember("2", 0), _FakeMember("3", 0)]
+    scores = [
+        YesterdayScore("2", 0, "乙", 800),
+        YesterdayScore("1", 0, "甲", 1400),
+        YesterdayScore("3", 0, "丙", 0),
+    ]
+    sort_members_by_yesterday(members, scores)
+    assert [m.uid for m in members] == ["1", "2", "3"]  # 1400 > 800 > 0
+
+

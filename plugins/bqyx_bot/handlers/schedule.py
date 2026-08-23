@@ -71,6 +71,13 @@ def apply_yesterday_to_members(
     return members
 
 
+def sort_members_by_yesterday(members: list, scores: list[YesterdayScore]) -> list:
+    """按昨日贡献降序排列成员（渲染顺序）；无分数成员视为 0 排后面。"""
+    score_map = {score.uid: score.yesterday for score in scores}
+    members.sort(key=lambda m: -score_map.get(str(getattr(m, "uid", "") or ""), 0))
+    return members
+
+
 class ScheduleHandlers(BqyxServices):
     async def capture_members(self) -> None:
         async with self._lock():
@@ -106,6 +113,8 @@ class ScheduleHandlers(BqyxServices):
         members = army_cache.get(army_id) or list(await user.get_members(army_id))
         # 渲染前把成员的「日贡」列覆盖为昨日贡献值，图片/文本显示昨日贡献而非实时今日贡献
         apply_yesterday_to_members(members, scores)
+        # 按昨日贡献降序渲染（游戏接口返回顺序与贡献无关）
+        sort_members_by_yesterday(members, scores)
         if limit is not None:
             below = {score.uid for score in below_limit(scores, limit)}
             members = [member for member in members if str(member.uid) in below]
