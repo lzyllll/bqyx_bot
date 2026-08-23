@@ -45,8 +45,8 @@ class ContributionKind(StrEnum):
     @property
     def default_limit(self) -> int:
         if self is ContributionKind.DAILY:
-            return 1100
-        return 7700
+            return 1400
+        return 9800
 
     def below_limit(self, member: Any, limit: int) -> bool:
         return self.value_of(member) < limit

@@ -1,3 +1,4 @@
+from bqyx_api.archive.union import parse_union_save
 from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent
 
@@ -6,6 +7,7 @@ from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
 from ..hooks import auto_bind_limit, error_reply, query_limit
 from ..models import GameMember, QQMember
+from ..parsing import parse_format
 
 
 def pick_member_for_uid(members, uid: str):
@@ -105,34 +107,65 @@ class BindHandlers(BqyxServices):
             f"您已绑定游戏 UID: {bind.uid}，存档: {bind.arch_index}"
         )
 
+    # @error_reply
+    # @query_limit
+    # @registrar.on_group_command("我的信息")
+    # async def check_my_info(self, event: GroupMessageEvent) -> None:
+    #     bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))
+    #     if not bind:
+    #         raise UserNotBoundError()
+
+    #     user, army_id = await self.require_army(str(event.group_id))
+    #     members = (await user.get_members(army_id)).filter(
+    #         lambda m: str(m.uid) == bind.uid and int(m.index) == bind.arch_index
+    #     )
+    #     if not members:
+    #         members = (await user.get_members(army_id)).filter(
+    #             lambda m: str(m.uid) == bind.uid
+    #         )
+    #     if not members:
+    #         raise BotError(f"未找到 UID {bind.uid} / 存档 {bind.arch_index} 的成员信息，请确认绑定是否正确。")
+
+    #     member = members[0]
+    #     await event.reply(
+    #         "您的贡献信息：\n"
+    #         f"名称：{member.detail.playerName}\n"
+    #         f"UID：{member.uid}\n"
+    #         f"存档：{member.index}\n"
+    #         f"今日贡献：{member.detail.conDay}\n"
+    #         f"本周贡献：{member.detail.conObj.this_week}\n"
+    #         f"上周贡献: {member.detail.conObj.last_week}"
+    #     )
+
     @error_reply
     @query_limit
     @registrar.on_group_command("我的信息")
-    async def check_my_info(self, event: GroupMessageEvent) -> None:
+    async def check_my_contribution(self, event: GroupMessageEvent) -> None:
         bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))
         if not bind:
             raise UserNotBoundError()
 
-        user, army_id = await self.require_army(str(event.group_id))
-        members = (await user.get_members(army_id)).filter(
-            lambda m: str(m.uid) == bind.uid and int(m.index) == bind.arch_index
-        )
-        if not members:
+        format_type = parse_format(event.message.text, "图片")
+        user = await self.account.get_user()
+        account = await user.get_account(bind.uid, bind.arch_index)
+        union_data = parse_union_save(account, self.union_defines())
+
+        title = "我的贡献"
+        army_id = await self.store.get_group_army(str(event.group_id))
+        if army_id is not None:
             members = (await user.get_members(army_id)).filter(
                 lambda m: str(m.uid) == bind.uid
             )
-        if not members:
-            raise BotError(f"未找到 UID {bind.uid} / 存档 {bind.arch_index} 的成员信息，请确认绑定是否正确。")
+            if members:
+                player_name = getattr(getattr(members[0], "detail", None), "playerName", "") or ""
+                if player_name:
+                    title = f"{player_name} 的贡献"
 
-        member = members[0]
-        await event.reply(
-            "您的贡献信息：\n"
-            f"名称：{member.detail.playerName}\n"
-            f"UID：{member.uid}\n"
-            f"存档：{member.index}\n"
-            f"今日贡献：{member.detail.conDay}\n"
-            f"本周贡献：{member.detail.conObj.this_week}\n"
-            f"上周贡献: {member.detail.conObj.last_week}"
+        await self.replies.send_contribution(
+            event,
+            union_data,
+            format_type,
+            title=title,
         )
 
     @error_reply

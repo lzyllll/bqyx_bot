@@ -6,7 +6,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from bqyx_api.render import Renderer
+from bqyx_api.archive.union import UnionPKRankAgent
+from bqyx_api.render import Renderer, UnionPKRankRenderer
 from ncatbot.event.qq import GroupMessageEvent
 from ncatbot.types.qq import ForwardConstructor
 
@@ -32,6 +33,7 @@ class ReplyService:
             "一键绑定          自动匹配并绑定\n"
             "我的绑定          查看当前绑定\n"
             "我的信息          查看个人信息\n"
+            "我的贡献          查看个人贡献任务\n"
             "我的物品          查看背包，有变动时附带对比图\n"
             "免at添加 @用户    添加到免at名单\n"
             "免at删除 @用户    从免at名单移除\n"
@@ -42,6 +44,7 @@ class ReplyService:
             "军队信息 [图片|文本]\n"
             "查成员 [图片|表格|文本]\n"
             "查争霸 [图片|表格|文本]\n"
+            "查PK [图片|文本]\n"
             "查日贡 [阈值] [图片|表格|文本]\n"
             "查日贡@ [阈值]\n"
             "查周贡 [阈值] [图片|表格|文本]\n"
@@ -85,20 +88,59 @@ class ReplyService:
         format_type: str = "图片",
         *,
         file_prefix: str = "domain",
+        uid: str | None = None,
     ) -> None:
         member_list = list(members)
         if format_type == "图片":
-            await self._send_image(event, Renderer.domain.image(member_list, union_info))
+            await self._send_image(
+                event,
+                Renderer.domain.image(member_list, union_info, uid=uid),
+            )
             return
         if format_type == "表格":
             await self._send_excel(
                 event,
-                Renderer.domain.excel(member_list, union_info),
+                Renderer.domain.excel(member_list, union_info, uid=uid),
                 file_prefix,
                 "正在上传争霸表格...",
             )
             return
-        await event.reply(Renderer.domain.text(member_list, union_info))
+        await event.reply(Renderer.domain.text(member_list, union_info, uid=uid))
+
+    async def send_pk_rank(
+        self,
+        event: GroupMessageEvent,
+        members: Any,
+        format_type: str = "图片",
+        *,
+        highlight_uid: str | None = None,
+    ) -> None:
+        agent = UnionPKRankAgent.from_members(members)
+        if format_type == "图片":
+            png = await UnionPKRankRenderer().render_png(
+                agent,
+                highlight_uid=highlight_uid,
+            )
+            await self._send_image(event, png)
+            return
+        await self._send_text(event, _pk_rank_text(agent, highlight_uid))
+
+    async def send_contribution(
+        self,
+        event: GroupMessageEvent,
+        union_data: Any,
+        format_type: str = "图片",
+        *,
+        title: str = "我的贡献",
+    ) -> None:
+        if format_type == "文本":
+            await self._send_text(
+                event,
+                Renderer.contribution.text(union_data=union_data, title=title),
+            )
+            return
+        png = await Renderer.contribution.image(union_data=union_data, title=title)
+        await self._send_image(event, png)
 
     async def send_union_info(
         self,
@@ -179,3 +221,19 @@ class ReplyService:
             await self.send_forward_text(event, text)
             return
         await event.reply(text)
+
+
+def _pk_rank_text(agent: UnionPKRankAgent, highlight_uid: str | None = None) -> str:
+    lines = [
+        f"军队PK排行  赛季{agent.season}  {agent.props_name}",
+        f"人数: {len(agent.entries)}",
+        "",
+    ]
+    for entry in agent.entries:
+        mark = " *" if highlight_uid and entry.uid == highlight_uid else ""
+        gift = f"  {entry.gift_cn_name}" if entry.gift_cn_name else ""
+        lines.append(
+            f"{entry.rank:>3}. {entry.nickname}  积分{entry.score_text}  "
+            f"战力{entry.dps_text}{gift}{mark}"
+        )
+    return "\n".join(lines)

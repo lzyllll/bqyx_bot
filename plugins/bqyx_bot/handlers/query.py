@@ -44,7 +44,29 @@ class QueryHandlers(BqyxServices):
         user, army_id = await self.require_army(str(event.group_id))
         members = await user.get_members(army_id)
         union_info = await user.get_union_info(army_id)
-        await self.replies.send_domain(event, members, union_info, format_type)
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
+        await self.replies.send_domain(
+            event,
+            members,
+            union_info,
+            format_type,
+            uid=bind.uid if bind else None,
+        )
+
+    @error_reply
+    @query_limit
+    @registrar.on_group_command("查PK", "查pk", "查pk排行", "查PK排行")
+    async def check_pk_rank(self, event: GroupMessageEvent) -> None:
+        format_type = parse_format(event.message.text, "图片")
+        user, army_id = await self.require_army(str(event.group_id))
+        members = await user.get_members(army_id)
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
+        await self.replies.send_pk_rank(
+            event,
+            members,
+            format_type,
+            highlight_uid=bind.uid if bind else None,
+        )
 
     @error_reply
     @query_limit
