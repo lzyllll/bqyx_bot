@@ -38,7 +38,6 @@ def report_date(now: datetime | None = None) -> str:
 
 
 def snapshot_from_member(
-    group_id: str,
     army_id: int,
     snapshot_date: str,
     member,
@@ -50,7 +49,6 @@ def snapshot_from_member(
         nickname = str(getattr(member, "nickname", "") or member.uid).strip()
     con_obj = getattr(detail, "conObj", None)
     return MemberSnapshot(
-        group_id=str(group_id),
         army_id=int(army_id),
         snapshot_date=str(snapshot_date),
         uid=str(member.uid),

@@ -28,7 +28,10 @@ class GameMember:
 
 @dataclass(frozen=True)
 class MemberSnapshot:
-    """某军队成员在某一天（23:30 采集）的贡献指标快照。
+    """某军队在某一天（23:30 采集）的成员贡献指标快照。
+
+    快照按「军队」存储（不按 QQ 群）：同一军队被多个群绑定时共享一份，
+    群改绑军队后无需等待重新采集；群维度由 group_army 绑定表负责。
 
     注意：这里存的是「当日全量指标快照」，不是「昨日贡献」。
     「昨日贡献」是派生值，由前后两天快照对比计算得出
@@ -40,7 +43,6 @@ class MemberSnapshot:
     - this_week: 本周贡献（按周代码从 conObj 解析）
     """
 
-    group_id: str
     army_id: int
     snapshot_date: str
     uid: str

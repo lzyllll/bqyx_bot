@@ -105,7 +105,6 @@ class ScheduleHandlers(BqyxServices):
         user, army_id = await self.require_army(group_id)
         army_cache: dict[int, list] = {}
         day, scores = await self._yesterday_scores(
-            group_id,
             army_id,
             user=user,
             army_cache=army_cache,
@@ -136,40 +135,34 @@ class ScheduleHandlers(BqyxServices):
         user = await self.account.get_user()
         snapshot_day = capture_date()
         captured_at = datetime.now(timezone.utc).isoformat()
-        # 按军队去重：一个军队可能被多个群绑定，只拉取一次，快照按绑定群各写一份
-        by_army: dict[int, list[str]] = {}
-        for group_id, army_id in groups:
-            by_army.setdefault(int(army_id), []).append(str(group_id))
+        # 按军队去重：快照按军队存储（不按群），一个军队只采集写一份
+        army_ids = sorted({int(army_id) for _, army_id in groups})
         army_cache: dict[int, list] = {}
         ok = 0
-        for army_id, group_ids in by_army.items():
+        for army_id in army_ids:
             try:
                 items = await self._live_snapshots(
                     user,
                     army_cache,
-                    group_ids[0],
                     army_id,
                     snapshot_day,
                     captured_at,
                 )
-                for group_id in group_ids:
-                    await self.store.replace_member_snapshots(
-                        group_id,
-                        army_id,
-                        snapshot_day,
-                        items,
-                    )
-                ok += len(group_ids)
+                await self.store.replace_member_snapshots(
+                    army_id,
+                    snapshot_day,
+                    items,
+                )
+                ok += 1
                 LOG.info(
-                    "已采集军队 %s 成员 %s 人（%s，绑定群 %s 个）",
+                    "已采集军队 %s 成员 %s 人（%s）",
                     army_id,
                     len(items),
                     snapshot_day,
-                    len(group_ids),
                 )
             except Exception:
-                LOG.exception("采集军队 %s 失败（绑定群 %s）", army_id, group_ids)
-        LOG.info("成员采集完成：%s/%s 个群", ok, len(groups))
+                LOG.exception("采集军队 %s 失败", army_id)
+        LOG.info("成员采集完成：%s/%s 个军队", ok, len(army_ids))
 
     async def _capture_unions(self) -> None:
         """23:59 采集前 1000 军队排行。
@@ -222,27 +215,20 @@ class ScheduleHandlers(BqyxServices):
 
     async def _yesterday_scores(
         self,
-        group_id: str,
         army_id: int,
         *,
         user,
         army_cache: dict[int, list],
         captured_at: str | None = None,
     ) -> tuple[str, list[YesterdayScore]]:
-        """昨日贡献：读昨天快照，实时拉取当前数据对比计算。"""
+        """昨日贡献：读昨天快照（按军队），实时拉取当前数据对比计算。"""
         previous_day = report_date()
-        # 按 army_id 过滤：群改绑军队后同群可能残留旧军队快照，避免误用
-        previous = await self.store.list_member_snapshots(
-            group_id,
-            previous_day,
-            army_id=army_id,
-        )
+        previous = await self.store.list_member_snapshots(army_id, previous_day)
         if not previous:
             raise BotError(f"没有 {previous_day} 的成员快照，请等晚上采集完成后再试。")
         current = await self._live_snapshots(
             user,
             army_cache,
-            group_id,
             army_id,
             previous_day,
             captured_at or datetime.now(timezone.utc).isoformat(),
@@ -253,7 +239,6 @@ class ScheduleHandlers(BqyxServices):
         self,
         user,
         army_cache: dict[int, list],
-        group_id: str,
         army_id: int,
         snapshot_day: str,
         captured_at: str,
@@ -262,7 +247,6 @@ class ScheduleHandlers(BqyxServices):
             army_cache[army_id] = list(await user.get_members(army_id))
         return [
             snapshot_from_member(
-                group_id,
                 army_id,
                 snapshot_day,
                 member,

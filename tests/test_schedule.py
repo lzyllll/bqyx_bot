@@ -19,7 +19,6 @@ TZ = timezone(timedelta(hours=8))
 
 def _snap(**kwargs) -> MemberSnapshot:
     data = dict(
-        group_id="g",
         army_id=1,
         snapshot_date="2026-08-23",
         uid="1",
@@ -93,7 +92,8 @@ def test_snapshot_from_member_reads_detail():
             conObj=SimpleNamespace(this_week=5600),
         ),
     )
-    item = snapshot_from_member("g", 88, "2026-08-23", member, "now")
+    item = snapshot_from_member(88, "2026-08-23", member, "now")
+    assert item.army_id == 88
     assert item.uid == "1001"
     assert item.arch_index == 4
     assert item.nickname == "角色名"
@@ -104,19 +104,19 @@ def test_snapshot_from_member_reads_detail():
 
 @pytest.mark.asyncio
 async def test_capture_members_dedupes_army_per_group():
-    """同一军队被多个群绑定时：只拉取一次成员，但按绑定群各写一份快照。"""
+    """同一军队被多个群绑定时：只拉取一次成员，快照按军队只写一份。"""
     from types import SimpleNamespace as NS
 
     from bqyx_bot.handlers.schedule import ScheduleHandlers
 
-    writes: list[tuple[str, int, int]] = []
+    writes: list[tuple[int, str, int]] = []
 
     class FakeStore:
         async def list_group_armies(self):
             return [("g1", 29802), ("g2", 29802), ("g3", 1241)]
 
-        async def replace_member_snapshots(self, group_id, army_id, snapshot_date, items):
-            writes.append((group_id, army_id, len(items)))
+        async def replace_member_snapshots(self, army_id, snapshot_date, items):
+            writes.append((army_id, snapshot_date, len(items)))
 
     class FakeUser:
         def __init__(self):
@@ -143,8 +143,8 @@ async def test_capture_members_dedupes_army_per_group():
 
     # API 只拉 2 次（两个不同军队），29802 只拉一次
     assert fake_user.calls == 2
-    # 快照按群写 3 份（g1/g2 各一份 29802，g3 一份 1241）
-    assert sorted(writes) == [("g1", 29802, 1), ("g2", 29802, 1), ("g3", 1241, 1)]
+    # 快照按军队只写 2 份（29802 一份 + 1241 一份），不按群重复
+    assert sorted(writes) == [(1241, "2026-08-23", 1), (29802, "2026-08-23", 1)]
 
 
 async def _afake(user):

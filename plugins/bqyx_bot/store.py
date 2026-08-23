@@ -154,19 +154,17 @@ class SqliteStore:
 
     async def replace_member_snapshots(
         self,
-        group_id: str,
         army_id: int,
         snapshot_date: str,
         items: list[MemberSnapshot],
     ) -> None:
-        """覆盖式写入某群军队在某一天（snapshot_date）的成员快照。
+        """覆盖式写入某军队在某一天（snapshot_date）的成员快照。
 
-        先删除该 group_id + snapshot_date 的旧记录，再整体插入当天新快照，
-        保证每个「群 × 日期」只有一份最新采集结果。
+        快照按军队存储（不按 QQ 群）：先删除该 army_id + snapshot_date 的旧记录，
+        再整体插入当天新快照，保证每个「军队 × 日期」只有一份最新采集结果。
         """
         await self._run(
             self._replace_member_snapshots,
-            str(group_id),
             int(army_id),
             str(snapshot_date),
             items,
@@ -174,39 +172,21 @@ class SqliteStore:
 
     async def list_member_snapshots(
         self,
-        group_id: str,
+        army_id: int,
         snapshot_date: str,
-        army_id: int | None = None,
     ) -> list[MemberSnapshot]:
-        """查询某群某天的成员快照；指定 army_id 时只返回该军队的快照。
-
-        群改绑军队后，同群可能残留旧军队的快照（每群每天仅一份），
-        查询时必须按 army_id 过滤，避免把旧军队数据误当成本军队的。
-        """
-        if army_id is None:
-            rows = await self._run(
-                self._fetchall,
-                """
-                SELECT group_id, army_id, snapshot_date, uid, arch_index,
-                       nickname, contribution, con_day, this_week, captured_at
-                FROM member_snapshot
-                WHERE group_id = ? AND snapshot_date = ?
-                ORDER BY contribution DESC, nickname
-                """,
-                (str(group_id), str(snapshot_date)),
-            )
-        else:
-            rows = await self._run(
-                self._fetchall,
-                """
-                SELECT group_id, army_id, snapshot_date, uid, arch_index,
-                       nickname, contribution, con_day, this_week, captured_at
-                FROM member_snapshot
-                WHERE group_id = ? AND snapshot_date = ? AND army_id = ?
-                ORDER BY contribution DESC, nickname
-                """,
-                (str(group_id), str(snapshot_date), int(army_id)),
-            )
+        """查询某军队某天的成员快照（按军队存储，不区分 QQ 群）。"""
+        rows = await self._run(
+            self._fetchall,
+            """
+            SELECT army_id, snapshot_date, uid, arch_index,
+                   nickname, contribution, con_day, this_week, captured_at
+            FROM member_snapshot
+            WHERE army_id = ? AND snapshot_date = ?
+            ORDER BY contribution DESC, nickname
+            """,
+            (int(army_id), str(snapshot_date)),
+        )
         return [self._row_to_snapshot(row) for row in rows]
 
     async def replace_union_snapshots(
@@ -303,11 +283,10 @@ class SqliteStore:
                     cookies_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
-                -- 成员每日贡献快照：每天 23:30 全量覆盖写入一份，
+                -- 成员每日贡献快照：每天 23:30 全量覆盖写入一份（按军队存储，不按 QQ 群）。
                 -- 存当天每个成员的总贡献/今日贡献/本周贡献等指标。
                 -- 「昨日贡献」不在此表中，由前后两天快照对比计算得出。
                 CREATE TABLE IF NOT EXISTS member_snapshot (
-                    group_id TEXT NOT NULL,
                     army_id INTEGER NOT NULL,
                     snapshot_date TEXT NOT NULL,
                     uid TEXT NOT NULL,
@@ -317,7 +296,7 @@ class SqliteStore:
                     con_day INTEGER NOT NULL,
                     this_week INTEGER NOT NULL,
                     captured_at TEXT NOT NULL,
-                    PRIMARY KEY (group_id, snapshot_date, uid, arch_index)
+                    PRIMARY KEY (army_id, snapshot_date, uid, arch_index)
                 );
                 -- 军队排行快照：每天 23:59 全量覆盖写入一份（前 1000 名）。
                 -- 接口只有总贡献，today_contribution 由相邻两天快照对比得出；
@@ -337,6 +316,7 @@ class SqliteStore:
                 """
             )
             self._ensure_snapshot_contribution(conn)
+            self._ensure_member_snapshot_army_pk(conn)
             self._ensure_union_snapshot_nullable(conn)
 
     def _ensure_snapshot_contribution(self, conn: sqlite3.Connection) -> None:
@@ -345,6 +325,44 @@ class SqliteStore:
             conn.execute(
                 "ALTER TABLE member_snapshot ADD COLUMN contribution INTEGER NOT NULL DEFAULT 0"
             )
+
+    def _ensure_member_snapshot_army_pk(self, conn: sqlite3.Connection) -> None:
+        """老库 member_snapshot 按 (group_id, snapshot_date, uid, arch_index) 存储。
+
+        新设计按军队存储：去掉 group_id 列、主键改为 (army_id, snapshot_date, uid, arch_index)。
+        迁移时保留数据：同一军队被多个群绑定时去重（数据相同，取 MAX 保留一份）。
+        """
+        columns = {
+            row[1]: row for row in conn.execute("PRAGMA table_info(member_snapshot)").fetchall()
+        }
+        if "group_id" not in columns:
+            return  # 已是新结构
+        conn.executescript(
+            """
+            CREATE TABLE member_snapshot_new (
+                army_id INTEGER NOT NULL,
+                snapshot_date TEXT NOT NULL,
+                uid TEXT NOT NULL,
+                arch_index INTEGER NOT NULL,
+                nickname TEXT NOT NULL,
+                contribution INTEGER NOT NULL DEFAULT 0,
+                con_day INTEGER NOT NULL,
+                this_week INTEGER NOT NULL,
+                captured_at TEXT NOT NULL,
+                PRIMARY KEY (army_id, snapshot_date, uid, arch_index)
+            );
+            INSERT INTO member_snapshot_new (
+                army_id, snapshot_date, uid, arch_index,
+                nickname, contribution, con_day, this_week, captured_at
+            )
+            SELECT army_id, snapshot_date, uid, arch_index,
+                   MAX(nickname), MAX(contribution), MAX(con_day), MAX(this_week), MAX(captured_at)
+            FROM member_snapshot
+            GROUP BY army_id, snapshot_date, uid, arch_index;
+            DROP TABLE member_snapshot;
+            ALTER TABLE member_snapshot_new RENAME TO member_snapshot;
+            """
+        )
 
     def _ensure_union_snapshot_nullable(self, conn: sqlite3.Connection) -> None:
         """老库的 today_contribution 是 NOT NULL DEFAULT 0，重建为可空列以支持存 None。"""
@@ -398,26 +416,24 @@ class SqliteStore:
 
     def _replace_member_snapshots(
         self,
-        group_id: str,
         army_id: int,
         snapshot_date: str,
         items: list[MemberSnapshot],
     ) -> None:
         with self._connect() as conn:
             conn.execute(
-                "DELETE FROM member_snapshot WHERE group_id = ? AND snapshot_date = ?",
-                (group_id, snapshot_date),
+                "DELETE FROM member_snapshot WHERE army_id = ? AND snapshot_date = ?",
+                (army_id, snapshot_date),
             )
             conn.executemany(
                 """
                 INSERT INTO member_snapshot (
-                    group_id, army_id, snapshot_date, uid, arch_index,
+                    army_id, snapshot_date, uid, arch_index,
                     nickname, contribution, con_day, this_week, captured_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
-                        group_id,
                         army_id,
                         snapshot_date,
                         item.uid,
@@ -526,16 +542,15 @@ class SqliteStore:
     @staticmethod
     def _row_to_snapshot(row: tuple[Any, ...]) -> MemberSnapshot:
         return MemberSnapshot(
-            group_id=str(row[0]),
-            army_id=int(row[1]),
-            snapshot_date=str(row[2]),
-            uid=str(row[3]),
-            arch_index=int(row[4]),
-            nickname=str(row[5]),
-            contribution=int(row[6]),
-            con_day=int(row[7]),
-            this_week=int(row[8]),
-            captured_at=str(row[9]),
+            army_id=int(row[0]),
+            snapshot_date=str(row[1]),
+            uid=str(row[2]),
+            arch_index=int(row[3]),
+            nickname=str(row[4]),
+            contribution=int(row[5]),
+            con_day=int(row[6]),
+            this_week=int(row[7]),
+            captured_at=str(row[8]),
         )
 
     @staticmethod

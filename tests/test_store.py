@@ -59,22 +59,22 @@ async def test_member_snapshot_roundtrip(store):
     from bqyx_bot.models import MemberSnapshot
 
     items = [
-        MemberSnapshot("100", 88, "2026-08-23", "u1", 0, "甲", 10000, 2100, 3000, "t1"),
-        MemberSnapshot("100", 88, "2026-08-23", "u2", 1, "乙", 8000, 800, 1000, "t1"),
+        MemberSnapshot(88, "2026-08-23", "u1", 0, "甲", 10000, 2100, 3000, "t1"),
+        MemberSnapshot(88, "2026-08-23", "u2", 1, "乙", 8000, 800, 1000, "t1"),
     ]
-    await store.replace_member_snapshots("100", 88, "2026-08-23", items)
-    loaded = await store.list_member_snapshots("100", "2026-08-23")
+    await store.replace_member_snapshots(88, "2026-08-23", items)
+    loaded = await store.list_member_snapshots(88, "2026-08-23")
     assert [item.uid for item in loaded] == ["u1", "u2"]
     assert loaded[0].con_day == 2100
     assert loaded[0].contribution == 10000
+    assert all(item.army_id == 88 for item in loaded)
 
     await store.replace_member_snapshots(
-        "100",
         88,
         "2026-08-23",
-        [MemberSnapshot("100", 88, "2026-08-23", "u3", 2, "丙", 10, 1, 1, "t2")],
+        [MemberSnapshot(88, "2026-08-23", "u3", 2, "丙", 10, 1, 1, "t2")],
     )
-    loaded = await store.list_member_snapshots("100", "2026-08-23")
+    loaded = await store.list_member_snapshots(88, "2026-08-23")
     assert [item.uid for item in loaded] == ["u3"]
 
 
@@ -92,18 +92,18 @@ async def test_snapshot_retention_prunes_old_days(tmp_path):
     await store.init()
 
     def snap(day, uid):
-        return MemberSnapshot("100", 88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
+        return MemberSnapshot(88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
 
-    await store.replace_member_snapshots("100", 88, old_day, [snap(old_day, "u0")])
-    await store.replace_member_snapshots("100", 88, yesterday, [snap(yesterday, "u1")])
-    await store.replace_member_snapshots("100", 88, today, [snap(today, "u2")])
+    await store.replace_member_snapshots(88, old_day, [snap(old_day, "u0")])
+    await store.replace_member_snapshots(88, yesterday, [snap(yesterday, "u1")])
+    await store.replace_member_snapshots(88, today, [snap(today, "u2")])
 
     # 再次写入当天（模拟 23:30 采集），触发旧快照清理
-    await store.replace_member_snapshots("100", 88, today, [snap(today, "u3")])
+    await store.replace_member_snapshots(88, today, [snap(today, "u3")])
 
-    assert await store.list_member_snapshots("100", old_day) == []
-    assert [item.uid for item in await store.list_member_snapshots("100", yesterday)] == ["u1"]
-    assert [item.uid for item in await store.list_member_snapshots("100", today)] == ["u3"]
+    assert await store.list_member_snapshots(88, old_day) == []
+    assert [item.uid for item in await store.list_member_snapshots(88, yesterday)] == ["u1"]
+    assert [item.uid for item in await store.list_member_snapshots(88, today)] == ["u3"]
 
 
 async def test_snapshot_retention_disabled_keeps_all(tmp_path):
@@ -119,36 +119,88 @@ async def test_snapshot_retention_disabled_keeps_all(tmp_path):
     await store.init()
 
     def snap(day, uid):
-        return MemberSnapshot("100", 88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
+        return MemberSnapshot(88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
 
-    await store.replace_member_snapshots("100", 88, old_day, [snap(old_day, "u0")])
-    await store.replace_member_snapshots("100", 88, today, [snap(today, "u1")])
+    await store.replace_member_snapshots(88, old_day, [snap(old_day, "u0")])
+    await store.replace_member_snapshots(88, today, [snap(today, "u1")])
 
-    assert len(await store.list_member_snapshots("100", old_day)) == 1
-    assert len(await store.list_member_snapshots("100", today)) == 1
+    assert len(await store.list_member_snapshots(88, old_day)) == 1
+    assert len(await store.list_member_snapshots(88, today)) == 1
 
 
-async def test_list_member_snapshots_filters_by_army(tmp_path):
-    """群改绑军队后，同群残留旧军队快照必须能被 army_id 过滤掉。"""
+async def test_member_snapshot_keyed_by_army(tmp_path):
+    """快照按军队存储：不同军队各自一份，同一军队覆盖式更新。"""
     from bqyx_bot.models import MemberSnapshot
 
     store = SqliteStore(tmp_path / "army.db", retention_days=0)
     await store.init()
 
     def snap(army_id, uid):
-        return MemberSnapshot("g1", army_id, "2026-08-23", uid, 0, "n" + uid, 1, 1, 1, "t")
+        return MemberSnapshot(army_id, "2026-08-23", uid, 0, "n" + uid, 1, 1, 1, "t")
 
-    await store.replace_member_snapshots("g1", 1241, "2026-08-23", [snap(1241, "old")])
-    await store.replace_member_snapshots("g1", 29802, "2026-08-24", [snap(29802, "new")])
+    await store.replace_member_snapshots(1241, "2026-08-23", [snap(1241, "old")])
+    await store.replace_member_snapshots(29802, "2026-08-23", [snap(29802, "new")])
+    # 同一军队覆盖更新
+    await store.replace_member_snapshots(29802, "2026-08-23", [snap(29802, "new2")])
 
-    # 不指定 army_id：同群同日期按覆盖语义只剩最后写入的一份
-    assert [item.army_id for item in await store.list_member_snapshots("g1", "2026-08-23")] == [1241]
-    assert [item.army_id for item in await store.list_member_snapshots("g1", "2026-08-24")] == [29802]
+    assert [item.uid for item in await store.list_member_snapshots(1241, "2026-08-23")] == ["old"]
+    assert [item.uid for item in await store.list_member_snapshots(29802, "2026-08-23")] == ["new2"]
 
-    # 指定 army_id：精确过滤
-    assert await store.list_member_snapshots("g1", "2026-08-23", army_id=29802) == []
-    assert [item.uid for item in await store.list_member_snapshots("g1", "2026-08-24", army_id=29802)] == ["new"]
-    assert [item.uid for item in await store.list_member_snapshots("g1", "2026-08-23", army_id=1241)] == ["old"]
+
+async def test_member_snapshot_migration_from_group_keyed(tmp_path):
+    """老库（按 group_id 存）init 后迁移为按军队存，数据保留且同军队多群去重。"""
+    import sqlite3
+
+    from bqyx_bot.models import MemberSnapshot
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        """
+        CREATE TABLE member_snapshot (
+            group_id TEXT NOT NULL,
+            army_id INTEGER NOT NULL,
+            snapshot_date TEXT NOT NULL,
+            uid TEXT NOT NULL,
+            arch_index INTEGER NOT NULL,
+            nickname TEXT NOT NULL,
+            contribution INTEGER NOT NULL DEFAULT 0,
+            con_day INTEGER NOT NULL,
+            this_week INTEGER NOT NULL,
+            captured_at TEXT NOT NULL,
+            PRIMARY KEY (group_id, snapshot_date, uid, arch_index)
+        )
+        """
+    )
+    conn.executemany(
+        "INSERT INTO member_snapshot VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("g1", 29802, "2026-08-23", "u1", 0, "甲", 10000, 1400, 9800, "t"),
+            ("g2", 29802, "2026-08-23", "u1", 0, "甲", 10000, 1400, 9800, "t"),  # 同军队另一群
+            ("g1", 29802, "2026-08-23", "u2", 1, "乙", 8000, 800, 1000, "t"),
+            ("g3", 1241, "2026-08-23", "u3", 0, "丙", 500, 100, 200, "t"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    store = SqliteStore(path, retention_days=0)
+    await store.init()
+
+    # 同军队 29802 的 u1 在 g1/g2 两份 → 迁移后去重保留一份
+    rows = await store.list_member_snapshots(29802, "2026-08-23")
+    assert sorted(item.uid for item in rows) == ["u1", "u2"]
+    assert all(item.army_id == 29802 for item in rows)
+    u1 = next(item for item in rows if item.uid == "u1")
+    assert u1.nickname == "甲"
+    assert u1.con_day == 1400
+
+    rows1241 = await store.list_member_snapshots(1241, "2026-08-23")
+    assert [item.uid for item in rows1241] == ["u3"]
+
+    # 迁移后新结构可按军队覆盖写
+    await store.replace_member_snapshots(29802, "2026-08-23", [MemberSnapshot(29802, "2026-08-23", "u9", 0, "新", 1, 1, 1, "t")])
+    assert [item.uid for item in await store.list_member_snapshots(29802, "2026-08-23")] == ["u9"]
 
 
 async def test_union_snapshot_roundtrip(store):
