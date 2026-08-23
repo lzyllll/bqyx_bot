@@ -25,12 +25,14 @@ class UnionRankRenderer:
         date_label: str,
         rows: list[dict],
         captured_at: str | None = None,
+        show_daily: bool = True,
     ) -> str:
         return self.env.get_template("union_rank.j2").render(
             title=title,
             date_label=date_label,
             rows=rows,
             captured_at=captured_at,
+            show_daily=show_daily,
         )
 
     async def to_png(self, html: str) -> bytes:

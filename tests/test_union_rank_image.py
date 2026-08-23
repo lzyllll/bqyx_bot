@@ -36,13 +36,20 @@ def _make_items(count: int = 100) -> list[UnionSnapshot]:
     return items
 
 
-async def _render(title: str, rows: list[dict], filename: str) -> Path:
+async def _render(
+    title: str,
+    rows: list[dict],
+    filename: str,
+    *,
+    show_daily: bool = True,
+) -> Path:
     renderer = UnionRankRenderer()
     html = renderer.html(
         title=title,
         date_label=DATE_LABEL,
         rows=rows,
         captured_at=CAPTURED_AT,
+        show_daily=show_daily,
     )
     png = await renderer.to_png(html)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,11 +83,11 @@ async def test_render_union_rank_images():
         window=10,
     )[0]
 
-    # 军队总贡献排行：注入人数与贡献变动标注
+    # 军队总贡献排行：注入人数与较昨日贡献变动标注
     total_rows = _rank_rows(items, "contribution", army_id)[0]
     total_rows[6]["member_change"] = "+2"
-    total_rows[6]["contribution_change"] = "+3200"  # 本军
-    total_rows[3]["contribution_change"] = "-1500"
+    total_rows[6]["contribution_delta"] = "+3200"  # 本军
+    total_rows[3]["contribution_delta"] = "-1500"
 
     outputs = [
         await _render(
@@ -97,11 +104,13 @@ async def test_render_union_rank_images():
             "军队总贡献排行",
             total_rows,
             "union_rank_total.png",
+            show_daily=False,
         ),
         await _render(
             "军队总贡献排行（指定 80-100 名）",
             range_rows,
             "union_rank_range.png",
+            show_daily=False,
         ),
     ]
     for path in outputs:
