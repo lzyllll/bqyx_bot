@@ -7,7 +7,7 @@ from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
 from ..hooks import auto_bind_limit, error_reply, query_limit
 from ..models import GameMember, QQMember
-from ..parsing import parse_format
+from ..parsing import extract_uid, parse_format
 
 
 def pick_member_for_uid(members, uid: str):
@@ -17,9 +17,7 @@ def pick_member_for_uid(members, uid: str):
         return None
     if len(matches) > 1:
         indexes = "、".join(str(member.index) for member in matches)
-        raise BotError(
-            f"该账号在本军有多个存档（{indexes}），请使用『绑定uid {uid} <存档0-7>』指定。"
-        )
+        raise BotError(f"该账号在本军有多个存档（{indexes}），无法自动绑定。")
     return matches[0]
 
 
@@ -35,26 +33,19 @@ class BindHandlers(BqyxServices):
 
     @error_reply
     @registrar.on_group_command("绑定uid")
-    async def bind_uid(
-        self,
-        event: GroupMessageEvent,
-        uid: str,
-        arch_index: int | None = None,
-    ) -> None:
-        uid = uid.strip()
-        if not uid.isdigit():
-            raise BotError("UID 必须是数字")
+    async def bind_uid(self, event: GroupMessageEvent, uid: str = "") -> None:
+        resolved_uid = extract_uid(uid) or extract_uid(event.message.text)
+        if not resolved_uid:
+            raise BotError("请提供有效的游戏 UID，例如 123456 或 123456_a")
 
-        resolved_index = arch_index
-        if resolved_index is None:
-            resolved_index = await self._lookup_arch_index(str(event.group_id), uid)
-        if resolved_index is None:
-            raise BotError("请指定存档编号：绑定uid <UID> <存档0-7>")
-        if not 0 <= resolved_index <= 7:
-            raise BotError("存档编号必须是 0-7")
-
-        await self._save_bind(event, uid, resolved_index)
-
+        user, army_id = await self.require_army(str(event.group_id))
+        members = await user.get_members(army_id)
+        member = pick_member_for_uid(members, resolved_uid)
+        if member is None:
+            raise BotError(
+                f"未在本群军队中找到 UID {resolved_uid}，请确认 UID 或先绑定正确军队。"
+            )
+        await self._save_bind(event, resolved_uid, int(member.index))
 
     @error_reply
     @registrar.on_group_command("绑定账号", "绑定用户名")
@@ -231,11 +222,3 @@ class BindHandlers(BqyxServices):
             f"QQ {qq_id} 已绑定 UID {uid} / 存档 {arch_index}{suffix}"
         )
 
-    async def _lookup_arch_index(self, group_id: str, uid: str) -> int | None:
-        army_id = await self.store.get_group_army(group_id)
-        if army_id is None:
-            return None
-        user = await self.account.get_user()
-        members = await user.get_members(army_id)
-        member = pick_member_for_uid(members, uid)
-        return int(member.index) if member is not None else None

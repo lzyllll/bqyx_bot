@@ -135,4 +135,4 @@ class GroupRateLimiter:
 
 
 query_limit = GroupRateLimiter(max_calls=15, period=60)
-auto_bind_limit = GroupRateLimiter(max_calls=1, period=60)
+auto_bind_limit = GroupRateLimiter(max_calls=3, period=60)

@@ -12,7 +12,7 @@ class ArmyNotBoundError(BotError):
 
 class UserNotBoundError(BotError):
     def __init__(self) -> None:
-        super().__init__("您尚未绑定游戏 UID，请使用『绑定uid <UID> [存档]』或『绑定账号 <4399账号>』进行绑定。")
+        super().__init__("您尚未绑定游戏 UID，请使用『绑定uid <UID>』或『绑定账号 <4399账号>』进行绑定。")
 
 
 class AccountNotConfiguredError(BotError):

@@ -3,6 +3,7 @@ from ncatbot.event.qq import GroupMessageEvent
 from ncatbot.types import MessageArray
 
 from ..context import BqyxServices
+from ..errors import BotError
 from ..hooks import error_reply, query_limit
 from ..models import ContributionKind
 from ..parsing import parse_format, parse_format_and_limit
@@ -51,6 +52,59 @@ class QueryHandlers(BqyxServices):
             union_info,
             format_type,
             uid=bind.uid if bind else None,
+        )
+
+    @error_reply
+    @query_limit
+    @registrar.on_group_command("/members", ignore_case=True)
+    async def check_members_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
+        if union_id <= 0:
+            raise BotError("军队 ID 必须是正整数")
+        user = await self.account.get_user()
+        members = (await user.get_members(union_id)).sort(
+            key=lambda m: m.detail.conDay,
+            reverse=True,
+        )
+        await self.replies.send_members(
+            event,
+            members,
+            "图片",
+            title="成员列表：",
+            file_prefix="members",
+        )
+
+    @error_reply
+    @query_limit
+    @registrar.on_group_command("/domain", ignore_case=True)
+    async def check_domain_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
+        if union_id <= 0:
+            raise BotError("军队 ID 必须是正整数")
+        user = await self.account.get_user()
+        members = await user.get_members(union_id)
+        union_info = await user.get_union_info(union_id)
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
+        await self.replies.send_domain(
+            event,
+            members,
+            union_info,
+            "图片",
+            uid=bind.uid if bind else None,
+        )
+
+    @error_reply
+    @query_limit
+    @registrar.on_group_command("/pk", ignore_case=True)
+    async def check_pk_rank_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
+        if union_id <= 0:
+            raise BotError("军队 ID 必须是正整数")
+        user = await self.account.get_user()
+        members = await user.get_members(union_id)
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
+        await self.replies.send_pk_rank(
+            event,
+            members,
+            "图片",
+            highlight_uid=bind.uid if bind else None,
         )
 
     @error_reply

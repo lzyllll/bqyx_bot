@@ -26,6 +26,20 @@ class GameMember:
     nickname: str
 
 
+@dataclass(frozen=True)
+class MemberSnapshot:
+    group_id: str
+    army_id: int
+    snapshot_date: str
+    uid: str
+    arch_index: int
+    nickname: str
+    contribution: int
+    con_day: int
+    this_week: int
+    captured_at: str
+
+
 class ContributionKind(StrEnum):
     DAILY = "daily"
     WEEKLY = "weekly"

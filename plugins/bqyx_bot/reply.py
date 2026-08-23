@@ -28,7 +28,7 @@ class ReplyService:
             "\n"
             "绑定：\n"
             "绑定军队 <ID>     为本群绑定军队\n"
-            "绑定uid <UID> [存档]  绑定个人游戏ID和存档\n"
+            "绑定uid <UID>      绑定个人游戏ID，支持 123456 或 123456_a\n"
             "绑定账号 <账号>    用4399账号名绑定\n"
             "一键绑定          自动匹配并绑定\n"
             "我的绑定          查看当前绑定\n"
@@ -44,11 +44,17 @@ class ReplyService:
             "军队信息 [图片|文本]\n"
             "查成员 [图片|表格|文本]\n"
             "查争霸 [图片|表格|文本]\n"
+            "/members <军队ID>  按军队ID查看成员（图片）\n"
+            "/domain <军队ID>   按军队ID查看争霸（图片）\n"
+            "/pk <军队ID>       按军队ID查看PK排行（图片）\n"
             "查PK [图片|文本]\n"
             "查日贡 [阈值] [图片|表格|文本]\n"
             "查日贡@ [阈值]\n"
             "查周贡 [阈值] [图片|表格|文本]\n"
-            "查周贡@ [阈值]"
+            "查周贡@ [阈值]\n"
+            "昨日贡献 [阈值]   查看昨日贡献低于阈值的成员\n"
+            "昨日贡献@ [阈值]  查看昨日贡献低于阈值的成员，并at他们\n"
+            "\n"
         )
         await self.api.qq.post_group_forward_msg(event.group_id, fc.build())
 
@@ -180,9 +186,18 @@ class ReplyService:
         return "base64://" + base64.b64encode(data).decode("utf-8")
 
     async def send_forward_text(self, event: GroupMessageEvent, text: str) -> None:
-        fc = ForwardConstructor(user_id=str(event.self_id), nickname="Bot")
+        await self.send_group_forward_text(str(event.group_id), text, bot_id=event.self_id)
+
+    async def send_group_forward_text(
+        self,
+        group_id: str | int,
+        text: str,
+        *,
+        bot_id: str | int | None = None,
+    ) -> None:
+        fc = ForwardConstructor(user_id=str(bot_id or self.bot_id), nickname="Bot")
         fc.attach_text(text)
-        await self.api.qq.post_group_forward_msg(event.group_id, fc.build())
+        await self.api.qq.post_group_forward_msg(int(group_id), fc.build())
 
     async def _send_image(self, event: GroupMessageEvent, image_bytes: bytes) -> None:
         b64_str = base64.b64encode(image_bytes).decode("utf-8")

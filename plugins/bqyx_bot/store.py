@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import UserBind
+from .models import MemberSnapshot, UserBind
 
 
 def _utc_now() -> str:
@@ -33,6 +33,13 @@ class SqliteStore:
             (str(group_id),),
         )
         return int(row[0]) if row else None
+
+    async def list_group_armies(self) -> list[tuple[str, int]]:
+        rows = await self._run(
+            self._fetchall,
+            "SELECT group_id, army_id FROM group_army ORDER BY group_id",
+        )
+        return [(str(row[0]), int(row[1])) for row in rows]
 
     async def set_group_army(self, group_id: str, army_id: int) -> None:
         await self._run(
@@ -142,6 +149,39 @@ class SqliteStore:
         )
         return [str(row[0]) for row in rows]
 
+    async def replace_member_snapshots(
+        self,
+        group_id: str,
+        army_id: int,
+        snapshot_date: str,
+        items: list[MemberSnapshot],
+    ) -> None:
+        await self._run(
+            self._replace_member_snapshots,
+            str(group_id),
+            int(army_id),
+            str(snapshot_date),
+            items,
+        )
+
+    async def list_member_snapshots(
+        self,
+        group_id: str,
+        snapshot_date: str,
+    ) -> list[MemberSnapshot]:
+        rows = await self._run(
+            self._fetchall,
+            """
+            SELECT group_id, army_id, snapshot_date, uid, arch_index,
+                   nickname, contribution, con_day, this_week, captured_at
+            FROM member_snapshot
+            WHERE group_id = ? AND snapshot_date = ?
+            ORDER BY contribution DESC, nickname
+            """,
+            (str(group_id), str(snapshot_date)),
+        )
+        return [self._row_to_snapshot(row) for row in rows]
+
     async def get_session(self) -> tuple[str, dict[str, str]] | None:
         row = await self._run(
             self._fetchone,
@@ -206,8 +246,66 @@ class SqliteStore:
                     cookies_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS member_snapshot (
+                    group_id TEXT NOT NULL,
+                    army_id INTEGER NOT NULL,
+                    snapshot_date TEXT NOT NULL,
+                    uid TEXT NOT NULL,
+                    arch_index INTEGER NOT NULL,
+                    nickname TEXT NOT NULL,
+                    contribution INTEGER NOT NULL DEFAULT 0,
+                    con_day INTEGER NOT NULL,
+                    this_week INTEGER NOT NULL,
+                    captured_at TEXT NOT NULL,
+                    PRIMARY KEY (group_id, snapshot_date, uid, arch_index)
+                );
                 """
             )
+            self._ensure_snapshot_contribution(conn)
+
+    def _ensure_snapshot_contribution(self, conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(member_snapshot)").fetchall()}
+        if "contribution" not in columns:
+            conn.execute(
+                "ALTER TABLE member_snapshot ADD COLUMN contribution INTEGER NOT NULL DEFAULT 0"
+            )
+
+    def _replace_member_snapshots(
+        self,
+        group_id: str,
+        army_id: int,
+        snapshot_date: str,
+        items: list[MemberSnapshot],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM member_snapshot WHERE group_id = ? AND snapshot_date = ?",
+                (group_id, snapshot_date),
+            )
+            conn.executemany(
+                """
+                INSERT INTO member_snapshot (
+                    group_id, army_id, snapshot_date, uid, arch_index,
+                    nickname, contribution, con_day, this_week, captured_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        group_id,
+                        army_id,
+                        snapshot_date,
+                        item.uid,
+                        int(item.arch_index),
+                        item.nickname,
+                        int(item.contribution),
+                        int(item.con_day),
+                        int(item.this_week),
+                        item.captured_at,
+                    )
+                    for item in items
+                ],
+            )
+            conn.commit()
 
     def _execute(self, sql: str, params: tuple[Any, ...] = ()) -> int:
         with self._connect() as conn:
@@ -230,4 +328,19 @@ class SqliteStore:
             qq_id=str(row[1]),
             uid=str(row[2]),
             arch_index=int(row[3]),
+        )
+
+    @staticmethod
+    def _row_to_snapshot(row: tuple[Any, ...]) -> MemberSnapshot:
+        return MemberSnapshot(
+            group_id=str(row[0]),
+            army_id=int(row[1]),
+            snapshot_date=str(row[2]),
+            uid=str(row[3]),
+            arch_index=int(row[4]),
+            nickname=str(row[5]),
+            contribution=int(row[6]),
+            con_day=int(row[7]),
+            this_week=int(row[8]),
+            captured_at=str(row[9]),
         )

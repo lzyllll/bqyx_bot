@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+
 from bqyx_api.archive.things import MyThingsService
 from ncatbot.plugin import NcatBotPlugin
 
 from .account import AccountService
 from .config import Settings, load_settings
-from .handlers import BindHandlers, ExcludeHandlers, HelpHandlers, QueryHandlers, ThingsHandlers
+from .handlers import BindHandlers, ExcludeHandlers, HelpHandlers, QueryHandlers, ScheduleHandlers, ThingsHandlers
 from .reply import ReplyService
 from .store import SqliteStore
 
@@ -17,6 +19,7 @@ class BqyxBotPlugin(
     QueryHandlers,
     ThingsHandlers,
     ExcludeHandlers,
+    ScheduleHandlers,
 ):
     settings: Settings
     store: SqliteStore
@@ -36,6 +39,19 @@ class BqyxBotPlugin(
         self.replies = ReplyService(self.api, self.workspace)
         self.things = MyThingsService.from_env(store_path=self.workspace / "archives")
         await self.account.warmup()
+        self._nightly_lock = asyncio.Lock()
+        if not self.add_scheduled_task(
+            "capture_members",
+            "23:30",
+            callback=self.capture_members,
+        ):
+            self.logger.warning("注册 23:30 成员采集任务失败")
+        if not self.add_scheduled_task(
+            "report_yesterday",
+            "12:00",
+            callback=self.report_yesterday,
+        ):
+            self.logger.warning("注册 12:00 昨日贡献任务失败")
         self.logger.info("%s 已加载", self.name)
 
     async def on_close(self) -> None:
