@@ -136,34 +136,39 @@ class ScheduleHandlers(BqyxServices):
         user = await self.account.get_user()
         snapshot_day = capture_date()
         captured_at = datetime.now(timezone.utc).isoformat()
+        # 按军队去重：一个军队可能被多个群绑定，只拉取一次，快照按绑定群各写一份
+        by_army: dict[int, list[str]] = {}
+        for group_id, army_id in groups:
+            by_army.setdefault(int(army_id), []).append(str(group_id))
         army_cache: dict[int, list] = {}
         ok = 0
-        for group_id, army_id in groups:
+        for army_id, group_ids in by_army.items():
             try:
                 items = await self._live_snapshots(
                     user,
                     army_cache,
-                    group_id,
+                    group_ids[0],
                     army_id,
                     snapshot_day,
                     captured_at,
                 )
-                await self.store.replace_member_snapshots(
-                    group_id,
-                    army_id,
-                    snapshot_day,
-                    items,
-                )
-                ok += 1
+                for group_id in group_ids:
+                    await self.store.replace_member_snapshots(
+                        group_id,
+                        army_id,
+                        snapshot_day,
+                        items,
+                    )
+                ok += len(group_ids)
                 LOG.info(
-                    "已采集群 %s 军队 %s 成员 %s 人（%s）",
-                    group_id,
+                    "已采集军队 %s 成员 %s 人（%s，绑定群 %s 个）",
                     army_id,
                     len(items),
                     snapshot_day,
+                    len(group_ids),
                 )
             except Exception:
-                LOG.exception("采集群 %s 军队 %s 失败", group_id, army_id)
+                LOG.exception("采集军队 %s 失败（绑定群 %s）", army_id, group_ids)
         LOG.info("成员采集完成：%s/%s 个群", ok, len(groups))
 
     async def _capture_unions(self) -> None:

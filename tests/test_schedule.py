@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from bqyx_bot.models import MemberSnapshot
 from bqyx_bot.schedule import (
     YesterdayScore,
@@ -98,6 +100,55 @@ def test_snapshot_from_member_reads_detail():
     assert item.contribution == 8888
     assert item.con_day == 1234
     assert item.this_week == 5600
+
+
+@pytest.mark.asyncio
+async def test_capture_members_dedupes_army_per_group():
+    """同一军队被多个群绑定时：只拉取一次成员，但按绑定群各写一份快照。"""
+    from types import SimpleNamespace as NS
+
+    from bqyx_bot.handlers.schedule import ScheduleHandlers
+
+    writes: list[tuple[str, int, int]] = []
+
+    class FakeStore:
+        async def list_group_armies(self):
+            return [("g1", 29802), ("g2", 29802), ("g3", 1241)]
+
+        async def replace_member_snapshots(self, group_id, army_id, snapshot_date, items):
+            writes.append((group_id, army_id, len(items)))
+
+    class FakeUser:
+        def __init__(self):
+            self.calls = 0
+
+        async def get_members(self, army_id):
+            self.calls += 1
+            return [
+                NS(
+                    uid="1001",
+                    index=0,
+                    nickname="qq名",
+                    contribution=8888,
+                    detail=NS(playerName="角色名", conDay=1234, conObj=NS(this_week=5600)),
+                )
+            ]
+
+    fake_user = FakeUser()
+    handler = ScheduleHandlers()
+    handler.store = FakeStore()
+    handler.account = NS(get_user=lambda: _afake(fake_user))
+
+    await handler._capture_members()
+
+    # API 只拉 2 次（两个不同军队），29802 只拉一次
+    assert fake_user.calls == 2
+    # 快照按群写 3 份（g1/g2 各一份 29802，g3 一份 1241）
+    assert sorted(writes) == [("g1", 29802, 1), ("g2", 29802, 1), ("g3", 1241, 1)]
+
+
+async def _afake(user):
+    return user
 
 
 class _FakeDetail:
