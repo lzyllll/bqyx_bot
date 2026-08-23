@@ -85,9 +85,9 @@ def test_contribution_change_marks_diff_only():
 
 def test_parse_rank_range():
     assert parse_rank_range("今日日贡 90-110") == (90, 110)
-    assert parse_rank_range("军队排行 100") == 100
+    assert parse_rank_range("实时军队排行 100") == 100
     assert parse_rank_range("昨日日贡") is None
-    assert parse_rank_range("军队排行 abc") is None
+    assert parse_rank_range("实时军队排行 abc") is None
 
 
 def test_resolve_rank_spec():

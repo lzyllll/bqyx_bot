@@ -1,4 +1,4 @@
-"""军队排行查询：昨日日贡排行 / 今日日贡排行 / 军队排行（图片渲染，高亮本军）。"""
+"""军队排行查询：昨日日贡排行 / 今日日贡排行 / 实时军队排行（图片渲染，高亮本军）。"""
 
 from __future__ import annotations
 
@@ -235,9 +235,9 @@ class UnionRankHandlers(BqyxServices):
 
     @error_reply
     @total_union_limit
-    @registrar.on_group_command("军队排行")
+    @registrar.on_group_command("实时军队排行")
     async def union_rank(self, event: GroupMessageEvent) -> None:
-        """军队排行：实时拉取当前总贡献排行；昨晚快照仅作本军位置参考 cache（渐进扩大，上限 1000）。"""
+        """实时军队排行：实时拉取当前总贡献排行；昨晚快照仅作本军位置参考 cache（渐进扩大，上限 1000）。"""
         user, army_id = await self.require_army(str(event.group_id))
         day = report_date()
         spec = parse_rank_range(event.message.text)
