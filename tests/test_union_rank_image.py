@@ -62,6 +62,15 @@ async def test_render_union_rank_images():
     today_rows[6]["member_change"] = "+3"  # 50 名
     today_rows[4]["member_change"] = "-2"  # 48 名
 
+    # 指定区间：以第 90 名为中心 ±10（窗口上限内）
+    range_rows = _rank_rows(
+        items,
+        "contribution",
+        army_id,
+        center_rank=90,
+        window=10,
+    )[0]
+
     outputs = [
         await _render(
             "昨日日贡排名",
@@ -77,6 +86,11 @@ async def test_render_union_rank_images():
             "军队总贡献排行",
             _rank_rows(items, "contribution", army_id)[0],
             "union_rank_total.png",
+        ),
+        await _render(
+            "军队总贡献排行（指定 80-100 名）",
+            range_rows,
+            "union_rank_range.png",
         ),
     ]
     for path in outputs:

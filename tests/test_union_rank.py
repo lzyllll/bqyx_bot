@@ -1,4 +1,11 @@
-from bqyx_bot.handlers.union_rank import RANK_WINDOW, _member_change, _rank_rows
+from bqyx_bot.handlers.union_rank import (
+    MAX_WINDOW,
+    RANK_WINDOW,
+    _member_change,
+    _rank_rows,
+    parse_rank_range,
+    resolve_rank_spec,
+)
 from bqyx_bot.models import UnionSnapshot
 
 
@@ -60,3 +67,48 @@ def test_member_change_marks_diff_only():
     assert _member_change(87, prev) == "-3"
     assert _member_change(90, prev) is None
     assert _member_change(90, None) is None
+
+
+def test_parse_rank_range():
+    assert parse_rank_range("今日日贡 90-110") == (90, 110)
+    assert parse_rank_range("军队排行 100") == 100
+    assert parse_rank_range("昨日日贡") is None
+    assert parse_rank_range("军队排行 abc") is None
+
+
+def test_resolve_rank_spec():
+    assert resolve_rank_spec((90, 110), 1000) == (100, 10)
+    assert resolve_rank_spec((1, 1000), 1000) == (500, MAX_WINDOW)  # 窗口 clamp 到 20
+    assert resolve_rank_spec(100, 1000) == (100, RANK_WINDOW)
+    assert resolve_rank_spec(None, 1000) == (None, RANK_WINDOW)
+    assert resolve_rank_spec((10, 3), 1000) == (6, 4)  # 区间自动归一，窗口取较大侧
+    assert resolve_rank_spec((9999, 10001), 50) == (50, 0)  # 越界 clamp 到榜单，退化为单行
+
+
+def test_rank_rows_specified_range():
+    items = [_row(i, i * 10, i) for i in range(1, 101)]
+    rows, highlight = _rank_rows(
+        items,
+        "today_contribution",
+        army_id=9999,  # 本军不在窗口
+        center_rank=90,
+        window=10,
+    )
+    assert rows[0]["rank"] == 80
+    assert rows[-1]["rank"] == 100
+    assert len(rows) == 21
+    assert highlight is None  # 本军不在指定范围内不高亮
+
+
+def test_rank_rows_window_capped_at_max():
+    items = [_row(i, i * 10, i) for i in range(1, 101)]
+    rows, highlight = _rank_rows(
+        items,
+        "today_contribution",
+        army_id=50,
+        center_rank=50,
+        window=999,  # 超过上限
+    )
+    assert len(rows) == MAX_WINDOW * 2 + 1
+    assert rows[0]["rank"] == 50 - MAX_WINDOW
+    assert rows[-1]["rank"] == 50 + MAX_WINDOW
