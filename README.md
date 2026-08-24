@@ -27,6 +27,12 @@
 - `docs/docs/notes/reference/README.md` — API 参考索引（按用途查找类与方法）
 - `docs/docs/examples/README.md` — 示例索引（按平台与难度分类）
 
+## BQYX Bot 限流
+
+所有群指令均按“群 + 指令”分别限流：每条指令 30 秒仅可调用 1 次，`我的信息` 例外，为 5 秒仅可调用 1 次。所有已放行指令还共享 60 RPM 的全局上限。
+
+在群内发送 `统计RPM` 可查看当前全局 RPM。该命令同样受上述限流保护。
+
 ## 链接
 
 - 文档站：<https://docs.ncatbot.top>

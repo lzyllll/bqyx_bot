@@ -5,7 +5,7 @@ from ncatbot.event.qq import GroupMessageEvent
 from ..bind_match import match_members
 from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
-from ..hooks import auto_bind_limit, error_reply, query_limit
+from ..hooks import auto_bind_limit, error_reply, my_info_limit, query_limit
 from ..models import GameMember, QQMember
 from ..parsing import extract_uid, parse_format
 
@@ -23,15 +23,19 @@ def pick_member_for_uid(members, uid: str):
 
 class BindHandlers(BqyxServices):
     @error_reply
+    @query_limit
     @registrar.on_group_command("绑定军队")
     async def bind_army(self, event: GroupMessageEvent, army_id: int) -> None:
         user = await self.account.get_user()
         union = await user.get_union_info(int(army_id))
         await self.store.set_group_army(str(event.group_id), int(army_id))
-        name = getattr(union, "nickname", None) or getattr(union, "title", None) or army_id
+        name = (
+            getattr(union, "nickname", None) or getattr(union, "title", None) or army_id
+        )
         await event.reply(f"本群已成功绑定军队: {name} ({army_id})")
 
     @error_reply
+    @query_limit
     @registrar.on_group_command("绑定uid")
     async def bind_uid(self, event: GroupMessageEvent, uid: str = "") -> None:
         resolved_uid = extract_uid(uid) or extract_uid(event.message.text)
@@ -46,6 +50,7 @@ class BindHandlers(BqyxServices):
         await self._save_bind(event, resolved_uid, int(member.index))
 
     @error_reply
+    @query_limit
     @registrar.on_group_command("绑定账号", "绑定用户名")
     async def bind_account(self, event: GroupMessageEvent, username: str) -> None:
         username = (username or "").strip()
@@ -60,7 +65,9 @@ class BindHandlers(BqyxServices):
         except Exception as exc:
             detail = str(exc).strip()
             if "未能获取到有效的 UID" in detail or "用户名" in detail:
-                raise BotError(f"找不到账号「{username}」，请确认 4399 用户名是否正确。") from exc
+                raise BotError(
+                    f"找不到账号「{username}」，请确认 4399 用户名是否正确。"
+                ) from exc
             raise BotError(f"查询账号失败：{detail or type(exc).__name__}") from exc
 
         if not uid.isdigit() or uid == "0":
@@ -70,7 +77,9 @@ class BindHandlers(BqyxServices):
             members = await user.get_members(army_id)
         except Exception as exc:
             detail = str(exc).strip()
-            raise BotError(f"获取本群军队成员失败：{detail or type(exc).__name__}") from exc
+            raise BotError(
+                f"获取本群军队成员失败：{detail or type(exc).__name__}"
+            ) from exc
 
         member = pick_member_for_uid(members, uid)
         if member is None:
@@ -83,18 +92,18 @@ class BindHandlers(BqyxServices):
             event,
             uid,
             int(member.index),
-            extra=f"账号 {username}" + (f" / 角色 {player_name}" if player_name else ""),
+            extra=f"账号 {username}"
+            + (f" / 角色 {player_name}" if player_name else ""),
         )
 
     @error_reply
+    @query_limit
     @registrar.on_group_command("我的绑定")
     async def check_my_bind(self, event: GroupMessageEvent) -> None:
         bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))
         if not bind:
             raise UserNotBoundError()
-        await event.reply(
-            f"您已绑定游戏账号，存档: {bind.arch_index}"
-        )
+        await event.reply(f"您已绑定游戏账号，存档: {bind.arch_index}")
 
     # @error_reply
     # @query_limit
@@ -127,7 +136,7 @@ class BindHandlers(BqyxServices):
     #     )
 
     @error_reply
-    @query_limit
+    @my_info_limit
     @registrar.on_group_command("我的信息")
     async def check_my_contribution(self, event: GroupMessageEvent) -> None:
         bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))
@@ -146,7 +155,9 @@ class BindHandlers(BqyxServices):
                 lambda m: str(m.uid) == bind.uid
             )
             if members:
-                player_name = getattr(getattr(members[0], "detail", None), "playerName", "") or ""
+                player_name = (
+                    getattr(getattr(members[0], "detail", None), "playerName", "") or ""
+                )
                 if player_name:
                     title = f"{player_name} 的贡献"
 
@@ -168,7 +179,9 @@ class BindHandlers(BqyxServices):
         qq_members = [
             QQMember(
                 qq_id=str(member.user_id),
-                nickname=(member.card or member.nickname or str(member.user_id)).strip(),
+                nickname=(
+                    member.card or member.nickname or str(member.user_id)
+                ).strip(),
             )
             for member in group_members
             if "客串" not in (member.card or member.nickname or "")
@@ -216,7 +229,4 @@ class BindHandlers(BqyxServices):
         qq_id = str(event.user_id)
         await self.store.set_user_bind(str(event.group_id), qq_id, uid, arch_index)
         suffix = f"（{extra}）" if extra else ""
-        await event.reply(
-            f"QQ {qq_id} 已绑定成功 / 存档 {arch_index}{suffix}"
-        )
-
+        await event.reply(f"QQ {qq_id} 已绑定成功 / 存档 {arch_index}{suffix}")

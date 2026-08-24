@@ -1,4 +1,4 @@
-"""图片输出测试：用模拟榜单数据渲染三张军队排行图，输出到 tests/output/。"""
+"""图片输出测试：用模拟榜单数据渲染军队排行图，输出到 tests/output/。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from bqyx_bot.handlers.union_rank import _rank_rows
+from dataclasses import replace
+
+from bqyx_bot.handlers.union_rank import apply_weekly_contribution, _rank_rows
 from bqyx_bot.models import UnionSnapshot
 from bqyx_bot.union_rank_render import UnionRankRenderer
 
@@ -42,14 +44,17 @@ async def _render(
     filename: str,
     *,
     show_daily: bool = True,
+    score_label: str | None = None,
+    date_label: str = DATE_LABEL,
 ) -> Path:
     renderer = UnionRankRenderer()
     html = renderer.html(
         title=title,
-        date_label=DATE_LABEL,
+        date_label=date_label,
         rows=rows,
         captured_at=CAPTURED_AT,
         show_daily=show_daily,
+        score_label=score_label,
     )
     png = await renderer.to_png(html)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,6 +88,35 @@ async def test_render_union_rank_images():
         window=10,
     )[0]
 
+    # 本周/上周周贡：相对周日基线的总贡献差，默认本军上下 6 名
+    this_week_items = apply_weekly_contribution(
+        items,
+        {
+            item.union_id: replace(
+                item,
+                contribution=item.contribution - (9000 - (item.union_id - 1000) * 40),
+            )
+            for item in items
+        },
+    )
+    this_week_rows = _rank_rows(this_week_items, "today_contribution", army_id)[0]
+    this_week_rows[6]["member_change"] = "+4"
+    this_week_rows[2]["member_change"] = "-2"
+
+    last_week_items = apply_weekly_contribution(
+        items,
+        {
+            item.union_id: replace(
+                item,
+                contribution=item.contribution - (12000 - (item.union_id - 1000) * 60),
+            )
+            for item in items
+        },
+    )
+    last_week_rows = _rank_rows(last_week_items, "today_contribution", army_id)[0]
+    last_week_rows[6]["member_change"] = "+1"
+    last_week_rows[8]["member_change"] = "-3"
+
     # 军队总贡献排行：注入人数与较昨日贡献变动标注
     total_rows = _rank_rows(items, "contribution", army_id)[0]
     total_rows[6]["member_change"] = "+2"
@@ -111,6 +145,20 @@ async def test_render_union_rank_images():
             range_rows,
             "union_rank_range.png",
             show_daily=False,
+        ),
+        await _render(
+            "本周周贡排行（实时）",
+            this_week_rows,
+            "union_rank_this_week.png",
+            score_label="周贡",
+            date_label="2026-08-24 ~ 2026-08-26",
+        ),
+        await _render(
+            "上周周贡排行",
+            last_week_rows,
+            "union_rank_last_week.png",
+            score_label="周贡",
+            date_label="2026-08-17 ~ 2026-08-23",
         ),
     ]
     for path in outputs:

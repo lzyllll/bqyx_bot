@@ -144,11 +144,97 @@ class GroupRateLimiter:
         return wrapper  # type: ignore[return-value]
 
 
-query_limit = GroupRateLimiter(max_calls=15, period=60)
-auto_bind_limit = GroupRateLimiter(max_calls=3, period=60)
-# 排行查询限流：今日日贡/本周周贡（实时）2 次/分；昨日日贡/上周周贡/实时军队排行各 6 次/分
-union_live_limit = GroupRateLimiter(max_calls=2, period=60, name="今日日贡")
-yesterday_union_limit = GroupRateLimiter(max_calls=6, period=60, name="昨日日贡")
-total_union_limit = GroupRateLimiter(max_calls=6, period=60, name="实时军队排行")
-this_week_union_limit = GroupRateLimiter(max_calls=2, period=60, name="本周周贡")
-last_week_union_limit = GroupRateLimiter(max_calls=6, period=60, name="上周周贡")
+class GlobalRateLimiter:
+    """所有群指令共用的滑动窗口限流器。"""
+
+    def __init__(self, max_calls: int, period: float) -> None:
+        self.max_calls = max_calls
+        self.period = period
+        self._window: deque[float] = deque()
+        self._warned_groups: set[str] = set()
+
+    def _trim(self, now: float) -> None:
+        cutoff = now - self.period
+        while self._window and self._window[0] <= cutoff:
+            self._window.popleft()
+        if len(self._window) < self.max_calls:
+            self._warned_groups.clear()
+
+    def calls_in_period(self) -> int:
+        """返回当前滑动窗口内已经放行的调用数。"""
+        self._trim(time.monotonic())
+        return len(self._window)
+
+    def reset(self) -> None:
+        """清空状态，供测试或插件重载时使用。"""
+        self._window.clear()
+        self._warned_groups.clear()
+
+    async def _check(self, event: Any) -> bool:
+        now = time.monotonic()
+        self._trim(now)
+        if len(self._window) >= self.max_calls:
+            group_key = _group_id(event) or "global"
+            if group_key not in self._warned_groups:
+                self._warned_groups.add(group_key)
+                try:
+                    await event.reply(
+                        f"系统调用太频繁（全局限制 {self.max_calls} RPM），请稍后再试。"
+                    )
+                except Exception:
+                    LOG.exception("发送全局限流提示失败")
+            return False
+
+        self._window.append(now)
+        return True
+
+    def __call__(self, func: F) -> F:
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any):
+            event = _find_event(args, kwargs)
+            if event is not None and not await self._check(event):
+                return None
+            return await func(*args, **kwargs)
+
+        _replace_pending(func, wrapper)
+        return wrapper  # type: ignore[return-value]
+
+
+TOTAL_CALLS_PER_MINUTE = 60
+DEFAULT_COMMAND_MAX_CALLS = 1
+DEFAULT_COMMAND_PERIOD = 30
+MY_INFO_COMMAND_PERIOD = 5
+total_call_limit = GlobalRateLimiter(max_calls=TOTAL_CALLS_PER_MINUTE, period=60)
+
+
+def command_rate_limit(
+    max_calls: int = DEFAULT_COMMAND_MAX_CALLS,
+    period: float = DEFAULT_COMMAND_PERIOD,
+    *,
+    name: str = "",
+) -> Callable[[F], F]:
+    """为单条群指令叠加按群及全局两个限流窗口。"""
+
+    def decorator(func: F) -> F:
+        command_name = name or func.__qualname__
+        globally_limited = total_call_limit(func)
+        return GroupRateLimiter(max_calls, period, name=command_name)(globally_limited)
+
+    return decorator
+
+
+# 每条群指令各自按群限流 30 秒 1 次，且共享全局 60 RPM 限流。
+# query_limit 是装饰器工厂：每次使用 @query_limit 都会按 handler 名新建
+# GroupRateLimiter，因此不同指令不共用群限流计数；只有 total_call_limit 共用。
+query_limit = command_rate_limit()
+my_info_limit = command_rate_limit(
+    max_calls=DEFAULT_COMMAND_MAX_CALLS,
+    period=MY_INFO_COMMAND_PERIOD,
+    name="我的信息",
+)
+auto_bind_limit = command_rate_limit(name="一键绑定")
+union_live_limit = command_rate_limit(name="今日日贡排行")
+yesterday_union_limit = command_rate_limit(name="昨日日贡排行")
+total_union_limit = command_rate_limit(name="实时军队排行")
+this_week_union_limit = command_rate_limit(name="本周周贡排行")
+last_week_union_limit = command_rate_limit(name="上周周贡排行")
