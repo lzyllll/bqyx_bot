@@ -200,7 +200,7 @@ class GlobalRateLimiter:
         return wrapper  # type: ignore[return-value]
 
 
-TOTAL_CALLS_PER_MINUTE = 60
+TOTAL_CALLS_PER_MINUTE = 30
 DEFAULT_COMMAND_MAX_CALLS = 1
 DEFAULT_COMMAND_PERIOD = 30
 MY_INFO_COMMAND_PERIOD = 5
@@ -223,7 +223,8 @@ def command_rate_limit(
     return decorator
 
 
-# 每条群指令各自按群限流 30 秒 1 次，且共享全局 60 RPM 限流。
+
+# 每条群指令各自按群限流 30 秒 1 次，且共享全局 30 RPM 限流。
 # query_limit 是装饰器工厂：每次使用 @query_limit 都会按 handler 名新建
 # GroupRateLimiter，因此不同指令不共用群限流计数；只有 total_call_limit 共用。
 query_limit = command_rate_limit()
@@ -232,6 +233,7 @@ my_info_limit = command_rate_limit(
     period=MY_INFO_COMMAND_PERIOD,
     name="我的信息",
 )
+rpm_check_limit = command_rate_limit(name='rpm查看')
 auto_bind_limit = command_rate_limit(name="一键绑定")
 union_live_limit = command_rate_limit(name="今日日贡排行")
 yesterday_union_limit = command_rate_limit(name="昨日日贡排行")

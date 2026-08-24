@@ -2,10 +2,10 @@ bot_uin: '123456789'
 root: '123456789'
 debug: false
 adapters:
-# - type: ai
-#   platform: ai
-#   enabled: true
-#   config: {}
+- type: ai
+  platform: ai
+  enabled: true
+  config: {}
 - type: napcat
   platform: qq
   enabled: true
@@ -20,7 +20,3 @@ plugin:
   load_plugin: true
   plugin_whitelist: []
   plugin_blacklist: []
-logging:
-  event_log_levels:
-    message: NONE       # 关闭 QQ 对话事件在控制台的日志输出（群聊+私聊）
-    meta_event: NONE    # 心跳等元事件日志（保持默认关闭）
