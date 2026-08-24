@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-
+from ncatbot.types.napcat.group import GroupInfo
 from bqyx_api.archive.paths import archive_store_dir, icon_dir, resource_dir
 from bqyx_api.archive.things import MyThingsService
+from ncatbot.core import registrar
 from ncatbot.plugin import NcatBotPlugin
-
+from ncatbot.event.qq import FriendRequestEvent, GroupMessageEvent, GroupRequestEvent
 from .account import AccountService
 from .config import Settings, load_settings
 from .handlers import (
@@ -19,7 +20,7 @@ from .handlers import (
 )
 from .reply import ReplyService
 from .store import SqliteStore
-
+from ncatbot.event import Approvable
 
 class BqyxBotPlugin(
     NcatBotPlugin,
@@ -74,6 +75,23 @@ class BqyxBotPlugin(
         ):
             self.logger.warning("注册 00:10 指令统计清理任务失败")
         self.logger.info("%s 已加载", self.name)
+
+
+    # 请求通过
+    @registrar.qq.on_friend_request()
+    async def on_request(self, event:FriendRequestEvent):
+        if isinstance(event, Approvable):
+            await event.approve()
+
+    @registrar.qq.on_group_request()
+    async def on_group_request(self, event:GroupRequestEvent):
+        """群请求 → 自动通过"""
+        group_info:GroupInfo = await self.api.qq.query.get_group_info(event.group_id)
+        if group_info.member_count >= 80:
+            await event.approve()
+        else:
+            await event.reject()
+            self.logger.info(f"拒绝了一个入群请求，理由：群人数 {group_info.member_count} 小于 80")
 
     async def on_close(self) -> None:
         await self.store.close()
