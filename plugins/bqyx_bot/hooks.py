@@ -39,6 +39,19 @@ def _group_id(event: Any) -> str | None:
     return str(group_id) if group_id is not None else None
 
 
+async def _record_command_call(args: tuple[Any, ...], command_name: str) -> None:
+    """将已放行的命令调用持久化；统计异常不能影响命令本身。"""
+    if not args:
+        return
+    record_call = getattr(getattr(args[0], "store", None), "record_command_call", None)
+    if not callable(record_call):
+        return
+    try:
+        await record_call(command_name)
+    except Exception:
+        LOG.exception("记录指令调用统计失败: %s", command_name)
+
+
 def _replace_pending(old: Callable[..., Any], new: Callable[..., Any]) -> None:
     """registrar 先收集原函数，装饰器包一层后要替换 pending 里的引用。"""
     try:
@@ -217,7 +230,14 @@ def command_rate_limit(
 
     def decorator(func: F) -> F:
         command_name = name or func.__qualname__
-        globally_limited = total_call_limit(func)
+        @wraps(func)
+        async def tracked(*args: Any, **kwargs: Any):
+            # 记录使用次数
+            await _record_command_call(args, command_name)
+            return await func(*args, **kwargs)
+
+        _replace_pending(func, tracked)
+        globally_limited = total_call_limit(tracked)
         return GroupRateLimiter(max_calls, period, name=command_name)(globally_limited)
 
     return decorator
@@ -225,15 +245,15 @@ def command_rate_limit(
 
 
 # 每条群指令各自按群限流 30 秒 1 次，且共享全局 30 RPM 限流。
-# query_limit 是装饰器工厂：每次使用 @query_limit 都会按 handler 名新建
-# GroupRateLimiter，因此不同指令不共用群限流计数；只有 total_call_limit 共用。
-query_limit = command_rate_limit()
+# 使用 command_rate_limit(name=...) 指定面向用户的主指令名，
+# 以便限流键和每日调用统计按指令分别聚合。
 my_info_limit = command_rate_limit(
     max_calls=DEFAULT_COMMAND_MAX_CALLS,
     period=MY_INFO_COMMAND_PERIOD,
     name="我的信息",
 )
-rpm_check_limit = command_rate_limit(name='rpm查看')
+rpm_check_limit = command_rate_limit(name="统计RPM")
+daily_call_stats_limit = command_rate_limit(name="统计今日调用")
 auto_bind_limit = command_rate_limit(name="一键绑定")
 union_live_limit = command_rate_limit(name="今日日贡排行")
 yesterday_union_limit = command_rate_limit(name="昨日日贡排行")

@@ -144,7 +144,29 @@ async def test_capture_members_dedupes_army_per_group():
     # API 只拉 2 次（两个不同军队），29802 只拉一次
     assert fake_user.calls == 2
     # 快照按军队只写 2 份（29802 一份 + 1241 一份），不按群重复
-    assert sorted(writes) == [(1241, "2026-08-23", 1), (29802, "2026-08-23", 1)]
+    snapshot_day = capture_date()
+    assert sorted(writes) == [(1241, snapshot_day, 1), (29802, snapshot_day, 1)]
+
+
+@pytest.mark.asyncio
+async def test_daily_command_stats_prune_task_delegates_to_store():
+    """DS-05: 每日定时清理任务调用存储层的指令统计清理方法。"""
+    from bqyx_bot.handlers.schedule import ScheduleHandlers
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def prune_command_call_stats(self) -> int:
+            self.calls += 1
+            return 3
+
+    handler = ScheduleHandlers()
+    handler.store = FakeStore()
+
+    await handler.prune_command_call_stats()
+
+    assert handler.store.calls == 1
 
 
 async def _afake(user):

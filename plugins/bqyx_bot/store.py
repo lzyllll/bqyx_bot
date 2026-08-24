@@ -1,19 +1,33 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from .models import MemberSnapshot, UnionSnapshot, UserBind
 
 SHANGHAI = timezone(timedelta(hours=8))
+COMMAND_STATS_RETENTION_MONTHS = 2
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _shanghai_today() -> str:
+    return datetime.now(SHANGHAI).date().isoformat()
+
+
+def _months_ago(value: date, months: int) -> date:
+    """返回相隔指定自然月的日期，月末自动落在目标月最后一天。"""
+    month_index = value.year * 12 + value.month - 1 - months
+    year, zero_based_month = divmod(month_index, 12)
+    month = zero_based_month + 1
+    return date(year, month, min(value.day, calendar.monthrange(year, month)[1]))
 
 
 class SqliteStore:
@@ -144,6 +158,59 @@ class SqliteStore:
             (str(group_id), str(qq_id)),
         )
         return rowcount > 0
+
+    async def record_command_call(
+        self,
+        command_name: str,
+        stat_date: str | None = None,
+    ) -> None:
+        """将一条已放行的群指令调用计入当天统计。"""
+        await self._run(
+            self._execute,
+            """
+            INSERT INTO command_call_stat (stat_date, command_name, call_count)
+            VALUES (?, ?, 1)
+            ON CONFLICT(stat_date, command_name) DO UPDATE SET
+                call_count = call_count + 1
+            """,
+            (stat_date or _shanghai_today(), str(command_name)),
+        )
+
+    async def list_command_call_stats(
+        self,
+        stat_date: str | None = None,
+    ) -> list[tuple[str, int]]:
+        """按调用次数降序返回某个上海自然日的各指令统计。"""
+        rows = await self._run(
+            self._fetchall,
+            """
+            SELECT command_name, call_count
+            FROM command_call_stat
+            WHERE stat_date = ?
+            ORDER BY call_count DESC, command_name ASC
+            """,
+            (stat_date or _shanghai_today(),),
+        )
+        return [(str(row[0]), int(row[1])) for row in rows]
+
+    async def prune_command_call_stats(
+        self,
+        retention_months: int = COMMAND_STATS_RETENTION_MONTHS,
+        *,
+        today: date | None = None,
+    ) -> int:
+        """删除早于保留窗口的指令统计，按上海自然月计算。"""
+        if retention_months < 1:
+            raise ValueError("retention_months 必须至少为 1")
+        cutoff = _months_ago(
+            today or datetime.now(SHANGHAI).date(),
+            retention_months,
+        ).isoformat()
+        return await self._run(
+            self._execute,
+            "DELETE FROM command_call_stat WHERE stat_date < ?",
+            (cutoff,),
+        )
 
     async def list_exclude(self, group_id: str) -> list[str]:
         rows = await self._run(
@@ -283,6 +350,13 @@ class SqliteStore:
                     uid TEXT NOT NULL,
                     cookies_json TEXT NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+                -- 群指令每日调用统计，按上海自然日和主指令名聚合。
+                CREATE TABLE IF NOT EXISTS command_call_stat (
+                    stat_date TEXT NOT NULL,
+                    command_name TEXT NOT NULL,
+                    call_count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (stat_date, command_name)
                 );
                 -- 成员每日贡献快照：每天 23:30 全量覆盖写入一份（按军队存储，不按 QQ 群）。
                 -- 存当天每个成员的总贡献/今日贡献/本周贡献等指标。

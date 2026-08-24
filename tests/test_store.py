@@ -1,3 +1,5 @@
+from datetime import date
+
 import pytest
 
 from bqyx_bot.store import SqliteStore
@@ -48,6 +50,35 @@ async def test_exclude_at_add_remove(store):
     assert await store.list_exclude("100") == ["200"]
     assert await store.remove_exclude("100", "200") is True
     assert await store.remove_exclude("100", "200") is False
+
+
+async def test_daily_command_stats_accumulate_by_date_and_command(store):
+    """DS-03: 指令统计按日期和主指令聚合，并按次数降序返回。"""
+    await store.record_command_call("查成员", "2026-08-24")
+    await store.record_command_call("查成员", "2026-08-24")
+    await store.record_command_call("帮助", "2026-08-24")
+    await store.record_command_call("查成员", "2026-08-25")
+
+    assert await store.list_command_call_stats("2026-08-24") == [
+        ("查成员", 2),
+        ("帮助", 1),
+    ]
+    assert await store.list_command_call_stats("2026-08-25") == [("查成员", 1)]
+
+
+async def test_command_stats_retention_uses_two_calendar_months(store):
+    """DS-04: 指令统计清理保留最近两个自然月内的数据。"""
+    await store.record_command_call("过期指令", "2026-06-23")
+    await store.record_command_call("边界指令", "2026-06-24")
+    await store.record_command_call("当前指令", "2026-08-24")
+
+    removed = await store.prune_command_call_stats(today=date(2026, 8, 24))
+
+    assert removed == 1
+    assert await store.list_command_call_stats("2026-06-23") == []
+    assert await store.list_command_call_stats("2026-06-24") == [("边界指令", 1)]
+    assert await store.list_command_call_stats("2026-08-24") == [("当前指令", 1)]
+
 
 async def test_list_group_armies(store):
     await store.set_group_army("100", 88)

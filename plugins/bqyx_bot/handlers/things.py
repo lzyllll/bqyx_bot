@@ -4,7 +4,7 @@ from ncatbot.event.qq import GroupMessageEvent
 
 from ..context import BqyxServices
 from ..errors import UserNotBoundError
-from ..hooks import error_reply, query_limit
+from ..hooks import command_rate_limit, error_reply
 
 
 def has_item_changes(diff: ThingsDiff | None) -> bool:
@@ -14,7 +14,7 @@ def has_item_changes(diff: ThingsDiff | None) -> bool:
 
 class ThingsHandlers(BqyxServices):
     @error_reply
-    @query_limit
+    @command_rate_limit(name="我的物品")
     @registrar.on_group_command("我的物品")
     async def show_my_things(self, event: GroupMessageEvent) -> None:
         bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))

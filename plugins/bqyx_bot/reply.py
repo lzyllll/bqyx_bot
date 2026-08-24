@@ -38,7 +38,7 @@ class ReplyService:
             "免at添加 @用户    添加到免at名单\n"
             "免at删除 @用户    从免at名单移除\n"
             "免at列表          查看免at名单\n"
-            "统计RPM           查看当前全局每分钟调用数"
+            "统计RPM           查看当前全局每分钟调用数\n"
         )
         fc.attach_text(
             "本群查询（需绑定军队）：\n"

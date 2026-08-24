@@ -67,6 +67,12 @@ class BqyxBotPlugin(
             callback=self.capture_unions,
         ):
             self.logger.warning("注册 23:59 军队排行采集任务失败")
+        if not self.add_scheduled_task(
+            "prune_command_call_stats",
+            "00:10",
+            callback=self.prune_command_call_stats,
+        ):
+            self.logger.warning("注册 00:10 指令统计清理任务失败")
         self.logger.info("%s 已加载", self.name)
 
     async def on_close(self) -> None:

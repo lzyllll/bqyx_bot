@@ -5,7 +5,7 @@ from ncatbot.event.qq import GroupMessageEvent
 from ..bind_match import match_members
 from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
-from ..hooks import auto_bind_limit, error_reply, my_info_limit, query_limit
+from ..hooks import auto_bind_limit, command_rate_limit, error_reply, my_info_limit
 from ..models import GameMember, QQMember
 from ..parsing import extract_uid, parse_format
 
@@ -23,7 +23,7 @@ def pick_member_for_uid(members, uid: str):
 
 class BindHandlers(BqyxServices):
     @error_reply
-    @query_limit
+    @command_rate_limit(name="绑定军队")
     @registrar.on_group_command("绑定军队")
     async def bind_army(self, event: GroupMessageEvent, army_id: int) -> None:
         user = await self.account.get_user()
@@ -35,7 +35,7 @@ class BindHandlers(BqyxServices):
         await event.reply(f"本群已成功绑定军队: {name} ({army_id})")
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="绑定uid")
     @registrar.on_group_command("绑定uid")
     async def bind_uid(self, event: GroupMessageEvent, uid: str = "") -> None:
         resolved_uid = extract_uid(uid) or extract_uid(event.message.text)
@@ -50,7 +50,7 @@ class BindHandlers(BqyxServices):
         await self._save_bind(event, resolved_uid, int(member.index))
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="绑定账号")
     @registrar.on_group_command("绑定账号", "绑定用户名")
     async def bind_account(self, event: GroupMessageEvent, username: str) -> None:
         username = (username or "").strip()
@@ -97,7 +97,7 @@ class BindHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="我的绑定")
     @registrar.on_group_command("我的绑定")
     async def check_my_bind(self, event: GroupMessageEvent) -> None:
         bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))
@@ -106,7 +106,7 @@ class BindHandlers(BqyxServices):
         await event.reply(f"您已绑定游戏账号，存档: {bind.arch_index}")
 
     # @error_reply
-    # @query_limit
+    # @command_rate_limit(name="我的信息")
     # @registrar.on_group_command("我的信息")
     # async def check_my_info(self, event: GroupMessageEvent) -> None:
     #     bind = await self.store.get_user_bind(str(event.group_id), str(event.user_id))

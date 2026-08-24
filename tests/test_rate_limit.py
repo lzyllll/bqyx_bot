@@ -14,6 +14,17 @@ class FakeEvent:
         self.replies.append(text)
 
 
+class FakeCommandStatsStore:
+    def __init__(self) -> None:
+        self.counts: dict[str, int] = {}
+
+    async def record_command_call(self, command_name: str) -> None:
+        self.counts[command_name] = self.counts.get(command_name, 0) + 1
+
+    async def list_command_call_stats(self) -> list[tuple[str, int]]:
+        return sorted(self.counts.items(), key=lambda item: (-item[1], item[0]))
+
+
 @pytest.mark.asyncio
 async def test_rate_limit_warns_once_then_ignores():
     limiter = GroupRateLimiter(max_calls=1, period=60)
@@ -151,5 +162,41 @@ async def test_rpm_command_reports_the_current_global_window(monkeypatch):
 
     await HelpHandlers().show_rpm(event)
 
-    assert event.replies == ["当前全局 RPM：1/60"]
+    assert event.replies == ["当前全局 RPM：1/30"]
+    total_call_limit.reset()
+
+
+@pytest.mark.asyncio
+async def test_command_stats_record_only_calls_that_pass_both_limits(monkeypatch):
+    """DS-01: 每日统计只记录通过群级和全局限流的指令调用。"""
+    total_call_limit.reset()
+    monkeypatch.setattr("bqyx_bot.hooks.time.monotonic", lambda: 100.0)
+    event = FakeEvent()
+    store = FakeCommandStatsStore()
+
+    @command_rate_limit(name="测试指令")
+    async def handler(self, event):
+        return "ok"
+
+    plugin = SimpleNamespace(store=store)
+    assert await handler(plugin, event) == "ok"
+    assert await handler(plugin, event) is None
+    assert store.counts == {"测试指令": 1}
+    total_call_limit.reset()
+
+
+@pytest.mark.asyncio
+async def test_daily_command_stats_include_the_stats_command(monkeypatch):
+    """DS-02: 统计今日调用的输出按次数展示，并包含该统计命令自身。"""
+    total_call_limit.reset()
+    monkeypatch.setattr("bqyx_bot.hooks.time.monotonic", lambda: 100.0)
+    event = FakeEvent()
+    handler = HelpHandlers()
+    handler.store = FakeCommandStatsStore()
+
+    await handler.show_daily_command_calls(event)
+
+    assert event.replies == [
+        "今日指令调用统计：\n统计今日调用：1 次\n总计：1 次"
+    ]
     total_call_limit.reset()

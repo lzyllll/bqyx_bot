@@ -4,14 +4,14 @@ from ncatbot.types import MessageArray
 
 from ..context import BqyxServices
 from ..errors import BotError
-from ..hooks import error_reply, query_limit
+from ..hooks import command_rate_limit, error_reply
 from ..models import ContributionKind
 from ..parsing import parse_format, parse_format_and_limit
 
 
 class QueryHandlers(BqyxServices):
     @error_reply
-    @query_limit
+    @command_rate_limit(name="军队信息")
     @registrar.on_group_command("军队信息")
     async def check_union_info(self, event: GroupMessageEvent) -> None:
         format_type = parse_format(event.message.text, "图片")
@@ -20,7 +20,7 @@ class QueryHandlers(BqyxServices):
         await self.replies.send_union_info(event, union_info, format_type)
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查成员")
     @registrar.on_group_command("查成员")
     async def check_members(self, event: GroupMessageEvent) -> None:
         format_type = parse_format(event.message.text, "图片")
@@ -38,7 +38,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查争霸")
     @registrar.on_group_command("查争霸")
     async def check_domain(self, event: GroupMessageEvent) -> None:
         format_type = parse_format(event.message.text, "图片")
@@ -55,7 +55,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="/members")
     @registrar.on_group_command("/members", ignore_case=True)
     async def check_members_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
         if union_id <= 0:
@@ -74,7 +74,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="/domain")
     @registrar.on_group_command("/domain", ignore_case=True)
     async def check_domain_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
         if union_id <= 0:
@@ -92,7 +92,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="/pk")
     @registrar.on_group_command("/pk", ignore_case=True)
     async def check_pk_rank_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
         if union_id <= 0:
@@ -108,7 +108,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查PK")
     @registrar.on_group_command("查PK", "查pk", "查pk排行", "查PK排行")
     async def check_pk_rank(self, event: GroupMessageEvent) -> None:
         format_type = parse_format(event.message.text, "图片")
@@ -123,7 +123,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查日贡")
     @registrar.on_group_command("查日贡")
     async def check_daily_contribution(self, event: GroupMessageEvent) -> None:
         limit, format_type = parse_format_and_limit(
@@ -139,7 +139,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查周贡")
     @registrar.on_group_command("查周贡")
     async def check_weekly_contribution(self, event: GroupMessageEvent) -> None:
         limit, format_type = parse_format_and_limit(
@@ -155,7 +155,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查日贡@")
     @registrar.on_group_command("查日贡@")
     async def check_daily_contribution_with_at(
         self,
@@ -172,7 +172,7 @@ class QueryHandlers(BqyxServices):
         )
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="查周贡@")
     @registrar.on_group_command("查周贡@")
     async def check_weekly_contribution_with_at(
         self,

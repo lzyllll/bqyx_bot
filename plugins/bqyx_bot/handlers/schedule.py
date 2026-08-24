@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import time
 from datetime import datetime, timezone
@@ -11,8 +10,8 @@ from ncatbot.event.qq import GroupMessageEvent
 
 from ..context import BqyxServices
 from ..errors import BotError
-from ..hooks import error_reply, query_limit
-from ..models import ContributionKind, MemberSnapshot, UnionSnapshot
+from ..hooks import command_rate_limit, error_reply
+from ..models import MemberSnapshot, UnionSnapshot
 from ..parsing import parse_format_and_limit
 from ..schedule import (
     YesterdayScore,
@@ -79,6 +78,11 @@ def sort_members_by_yesterday(members: list, scores: list[YesterdayScore]) -> li
 
 
 class ScheduleHandlers(BqyxServices):
+    async def prune_command_call_stats(self) -> None:
+        """每日清理超过两个月保留期的指令调用统计。"""
+        removed = await self.store.prune_command_call_stats()
+        LOG.info("已清理 %s 条过期指令调用统计", removed)
+
     async def capture_members(self) -> None:
         async with self._lock():
             await self._capture_members()
@@ -92,7 +96,7 @@ class ScheduleHandlers(BqyxServices):
             await self._capture_unions()
 
     @error_reply
-    @query_limit
+    @command_rate_limit(name="昨日贡献")
     @registrar.on_group_command("昨日贡献")
     async def check_yesterday_contribution(self, event: GroupMessageEvent) -> None:
         """昨日贡献：默认全部成员图片；加值 '昨日贡献 1400' 只显示低于该值的成员（bqyx_api 成员图片渲染）。"""
