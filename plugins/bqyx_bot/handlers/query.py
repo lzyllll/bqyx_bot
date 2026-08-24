@@ -1,15 +1,42 @@
 from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent
-from ncatbot.types import MessageArray
+from ncatbot.types import At, MessageArray
+
+from bqyx_api.archive import DemonWeekService
 
 from ..context import BqyxServices
-from ..errors import BotError
+from ..errors import BotError, UserNotBoundError
 from ..hooks import command_rate_limit, error_reply
 from ..models import ContributionKind
 from ..parsing import parse_format, parse_format_and_limit
 
 
 class QueryHandlers(BqyxServices):
+    @error_reply
+    @command_rate_limit(name="查修罗")
+    @registrar.on_group_command("查修罗")
+    async def check_demon(
+        self,
+        event: GroupMessageEvent,
+        target: At | None = None,
+    ) -> None:
+        """查询自己的修罗地图，或通过 @用户 查询其已绑定的存档。"""
+        group_id = str(event.group_id)
+        qq_id = str(target.user_id if target else event.user_id)
+        bind = await self.store.get_user_bind(group_id, qq_id)
+        if bind is None:
+            if target is None:
+                raise UserNotBoundError()
+            raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
+
+        format_type = parse_format(event.message.text, "图片")
+        user = await self.account.get_user()
+        account = await user.get_account(bind.uid, bind.arch_index)
+        result = DemonWeekService().parse_archive(account)
+
+        title = "我的修罗地图" if target is None else f"QQ {qq_id} 的修罗地图"
+        await self.replies.send_demon(event, result, format_type, title=title)
+
     @error_reply
     @command_rate_limit(name="军队信息")
     @registrar.on_group_command("军队信息")

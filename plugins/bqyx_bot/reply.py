@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from bqyx_api.archive import DemonRenderer
 from bqyx_api.archive.union import UnionPKRankAgent
 from bqyx_api.render import Renderer, UnionPKRankRenderer
 from ncatbot.event.qq import GroupMessageEvent
@@ -34,7 +35,7 @@ class ReplyService:
             "我的绑定          查看当前绑定\n"
             "我的信息          查看个人信息\n"
             "我的贡献          查看个人贡献任务\n"
-            "我的物品          查看背包，有变动时附带对比图\n"
+            "查物品 [@用户]    查看本人或指定用户背包，有变动时附带对比图\n"
             "免at添加 @用户    添加到免at名单\n"
             "免at删除 @用户    从免at名单移除\n"
             "免at列表          查看免at名单\n"
@@ -49,6 +50,8 @@ class ReplyService:
             "/domain <军队ID>   按军队ID查看争霸（图片）\n"
             "/pk <军队ID>       按军队ID查看PK排行（图片）\n"
             "查PK [图片|文本]\n"
+            "查修罗 [图片|文本]\n"
+            "查修罗 @用户 [图片|文本]\n"
             "查日贡 [阈值] [图片|表格|文本]\n"
             "查日贡@ [阈值]\n"
             "查周贡 [阈值] [图片|表格|文本]\n"
@@ -158,6 +161,24 @@ class ReplyService:
             )
             return
         png = await Renderer.contribution.image(union_data=union_data, title=title)
+        await self._send_image(event, png)
+
+    async def send_demon(
+        self,
+        event: GroupMessageEvent,
+        result: Any,
+        format_type: str = "图片",
+        *,
+        title: str = "修罗地图",
+    ) -> None:
+        if format_type == "文本":
+            await self._send_text(event, f"{title}\n{DemonRenderer.text(result)}")
+            return
+        png = await DemonRenderer.image(
+            result,
+            title=title,
+            captured_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
         await self._send_image(event, png)
 
     async def send_union_info(
