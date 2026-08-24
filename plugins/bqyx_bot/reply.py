@@ -54,12 +54,13 @@ class ReplyService:
             "查周贡 [阈值] [图片|表格|文本]\n"
             "查周贡@ [阈值]\n"
             "昨日贡献 [阈值]    昨日贡献排行图片（默认全部，可指定低于阈值）\n"
-            "昨日日贡排行 [100|90-110]  昨日军队排行（默认本军前后6名）\n"
-            "今日日贡排行 [100|90-110]  今日军队日贡排行（实时）\n"
-            "本周周贡排行 [100|90-110]  本周军队周贡排行（实时，默认本军前后6名）\n"
-            "上周周贡排行 [100|90-110]  上周军队周贡排行（默认本军前后6名）\n"
-            "实时军队排行 [100|90-110]  军队总贡献排行（实时）\n"
-            "\n"
+        )
+        fc.attach_text(           
+             "昨日日贡排行 [100|90-110]  (昨日)\n"
+            "今日日贡排行 [100|90-110]  (实时）\n"
+            "本周周贡排行 [100|90-110] （实时）\n"
+            "上周周贡排行 [100|90-110]  (上周)\n"
+            "军队排行 [100|90-110] （实时）\n"
         )
         await self.api.qq.post_group_forward_msg(event.group_id, fc.build())
 
@@ -69,15 +70,20 @@ class ReplyService:
         members: Any,
         format_type: str = "图片",
         *,
-        title: str = "",
+        title: str = "军团成员列表",
         file_prefix: str = "members",
         text_content: str | None = None,
+        uid: str | None = None,
     ) -> None:
         member_list = list(members)
         if format_type == "图片":
-            if title:
-                await event.reply(title)
-            await self._send_image(event, Renderer.members.image(member_list))
+            png = await Renderer.members.image(
+                member_list,
+                title=title,
+                uid=uid,
+                captured_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            await self._send_image(event, png)
             return
         if format_type == "表格":
             await self._send_excel(
@@ -124,17 +130,18 @@ class ReplyService:
         members: Any,
         format_type: str = "图片",
         *,
-        highlight_uid: str | None = None,
+        uid: str | None = None,
     ) -> None:
         agent = UnionPKRankAgent.from_members(members)
         if format_type == "图片":
             png = await UnionPKRankRenderer().render_png(
                 agent,
-                highlight_uid=highlight_uid,
+                uid=uid,
+                captured_at=time.strftime("%Y-%m-%d %H:%M:%S"),
             )
             await self._send_image(event, png)
             return
-        await self._send_text(event, _pk_rank_text(agent, highlight_uid))
+        await self._send_text(event, _pk_rank_text(agent, uid))
 
     async def send_contribution(
         self,
@@ -243,14 +250,14 @@ class ReplyService:
         await event.reply(text)
 
 
-def _pk_rank_text(agent: UnionPKRankAgent, highlight_uid: str | None = None) -> str:
+def _pk_rank_text(agent: UnionPKRankAgent, uid: str | None = None) -> str:
     lines = [
         f"军队PK排行  赛季{agent.season}  {agent.props_name}",
         f"人数: {len(agent.entries)}",
         "",
     ]
     for entry in agent.entries:
-        mark = " *" if highlight_uid and entry.uid == highlight_uid else ""
+        mark = " *" if uid and entry.uid == uid else ""
         gift = f"  {entry.gift_cn_name}" if entry.gift_cn_name else ""
         lines.append(
             f"{entry.rank:>3}. {entry.nickname}  积分{entry.score_text}  "

@@ -29,12 +29,13 @@ class QueryHandlers(BqyxServices):
             key=lambda m: m.detail.conDay,
             reverse=True,
         )
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
         await self.replies.send_members(
             event,
             members,
             format_type,
-            title="成员列表：",
             file_prefix="members",
+            uid=bind.uid if bind else None,
         )
 
     @error_reply
@@ -65,12 +66,13 @@ class QueryHandlers(BqyxServices):
             key=lambda m: m.detail.conDay,
             reverse=True,
         )
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
         await self.replies.send_members(
             event,
             members,
             "图片",
-            title="成员列表：",
             file_prefix="members",
+            uid=bind.uid if bind else None,
         )
 
     @error_reply
@@ -104,7 +106,7 @@ class QueryHandlers(BqyxServices):
             event,
             members,
             "图片",
-            highlight_uid=bind.uid if bind else None,
+            uid=bind.uid if bind else None,
         )
 
     @error_reply
@@ -119,7 +121,7 @@ class QueryHandlers(BqyxServices):
             event,
             members,
             format_type,
-            highlight_uid=bind.uid if bind else None,
+            uid=bind.uid if bind else None,
         )
 
     @error_reply
@@ -205,7 +207,14 @@ class QueryHandlers(BqyxServices):
             return
 
         if format_type == "图片":
-            await self.replies.send_members(event, members, "图片")
+            bind = await self.optional_bind(str(event.group_id), str(event.user_id))
+            await self.replies.send_members(
+                event,
+                members,
+                "图片",
+                title=f"{kind.label}低于 {limit}",
+                uid=bind.uid if bind else None,
+            )
             return
 
         lines = [

@@ -19,7 +19,7 @@ def test_pk_rank_text_marks_bound_uid():
         [_member("100", "Alice"), _member("200", "Bob")],
         week_index=1,
     )
-    text = _pk_rank_text(agent, highlight_uid="200")
+    text = _pk_rank_text(agent, uid="200")
     assert "军队PK排行" in text
     assert "Alice" in text
     assert "Bob" in text

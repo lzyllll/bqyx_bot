@@ -288,7 +288,7 @@ class UnionRankHandlers(BqyxServices):
 
     @error_reply
     @total_union_limit
-    @registrar.on_group_command("实时军队排行")
+    @registrar.on_group_command("军队排行")
     async def union_rank(self, event: GroupMessageEvent) -> None:
         """实时军队排行：实时拉取当前总贡献排行；昨晚快照仅作本军位置参考 cache（渐进扩大，上限 1000）。"""
         user, army_id = await self.require_army(str(event.group_id))

@@ -121,7 +121,14 @@ class ScheduleHandlers(BqyxServices):
         if limit is not None:
             below = {score.uid for score in below_limit(scores, limit)}
             members = [member for member in members if str(member.uid) in below]
-        await self.replies.send_members(event, members, "图片")
+        bind = await self.optional_bind(group_id, str(event.user_id))
+        await self.replies.send_members(
+            event,
+            members,
+            "图片",
+            title="昨日贡献",
+            uid=bind.uid if bind else None,
+        )
 
     def _lock(self) -> asyncio.Lock:
         lock = getattr(self, "_nightly_lock", None)
