@@ -185,3 +185,22 @@ def test_sort_members_by_yesterday_desc():
     assert [m.uid for m in members] == ["1", "2", "3"]  # 1400 > 800 > 0
 
 
+
+
+def test_last_sunday_before_monday():
+    from bqyx_bot.schedule import last_sunday, last_week_label, last_week_range, this_week_label
+
+    monday = datetime(2026, 8, 24, 10, 0, tzinfo=TZ)
+    assert last_sunday(monday).isoformat() == "2026-08-23"
+    assert last_week_range(monday) == ("2026-08-16", "2026-08-23")
+    assert this_week_label(monday) == "2026-08-24 ~ 2026-08-24"
+    assert last_week_label(monday) == "2026-08-17 ~ 2026-08-23"
+
+
+def test_last_sunday_on_sunday_uses_previous_week():
+    from bqyx_bot.schedule import last_sunday, last_week_range, this_week_label
+
+    sunday = datetime(2026, 8, 30, 15, 0, tzinfo=TZ)
+    assert last_sunday(sunday).isoformat() == "2026-08-23"
+    assert last_week_range(sunday) == ("2026-08-16", "2026-08-23")
+    assert this_week_label(sunday) == "2026-08-24 ~ 2026-08-30"

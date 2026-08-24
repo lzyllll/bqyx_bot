@@ -63,6 +63,7 @@ class UnionSnapshot:
     - contribution: 当天采集到的总贡献（服务端累计值）
     - today_contribution: 当日新增贡献 = 本次 contribution - 昨日快照 contribution
     「昨日日贡」即昨日快照的 today_contribution，直接读库即可。
+    快照默认保留 15 天，本周/上周周贡由周日快照的总贡献差在查询时计算，不落库。
     """
 
     snapshot_date: str

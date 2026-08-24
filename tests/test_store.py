@@ -305,3 +305,40 @@ async def test_union_snapshot_nullable_migration(tmp_path):
     )
     loaded = await store.list_union_snapshots("2026-08-24")
     assert loaded[0].today_contribution is None
+
+
+
+async def test_union_retention_independent_of_member(tmp_path):
+    """军队排行快照保留 15 天，成员快照仍按 3 天清理。"""
+    from datetime import datetime, timedelta, timezone
+
+    from bqyx_bot.models import MemberSnapshot, UnionSnapshot
+
+    shanghai = timezone(timedelta(hours=8))
+    today = datetime.now(shanghai).date()
+    keep_union = (today - timedelta(days=10)).isoformat()
+    prune_union = (today - timedelta(days=20)).isoformat()
+    prune_member = (today - timedelta(days=5)).isoformat()
+    today_s = today.isoformat()
+
+    store = SqliteStore(tmp_path / "split.db", retention_days=3, union_retention_days=15)
+    await store.init()
+
+    def union_row(day, uid):
+        return UnionSnapshot(day, 1, uid, "n" + str(uid), 1, 10, 100, 10, "t")
+
+    def member_row(day, uid):
+        return MemberSnapshot(88, day, uid, 0, "n" + uid, 1, 1, 1, "t")
+
+    await store.replace_union_snapshots(prune_union, [union_row(prune_union, 1)])
+    await store.replace_union_snapshots(keep_union, [union_row(keep_union, 2)])
+    await store.replace_union_snapshots(today_s, [union_row(today_s, 3)])
+
+    await store.replace_member_snapshots(88, prune_member, [member_row(prune_member, "u0")])
+    await store.replace_member_snapshots(88, today_s, [member_row(today_s, "u1")])
+
+    assert await store.list_union_snapshots(prune_union) == []
+    assert [item.union_id for item in await store.list_union_snapshots(keep_union)] == [2]
+    assert [item.union_id for item in await store.list_union_snapshots(today_s)] == [3]
+    assert await store.list_member_snapshots(88, prune_member) == []
+    assert [item.uid for item in await store.list_member_snapshots(88, today_s)] == ["u1"]

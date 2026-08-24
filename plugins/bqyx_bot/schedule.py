@@ -37,6 +37,31 @@ def report_date(now: datetime | None = None) -> str:
     return local.date().isoformat()
 
 
+def last_sunday(now: datetime | None = None):
+    """本周开始前的那个周日（上海时区日期）。周一的前一天。"""
+    today = as_shanghai(now).date()
+    return today - timedelta(days=today.weekday() + 1)
+
+
+def last_week_range(now: datetime | None = None) -> tuple[str, str]:
+    """返回 (上周开始前周日, 上周末周日)。"""
+    end = last_sunday(now)
+    start = end - timedelta(days=7)
+    return start.isoformat(), end.isoformat()
+
+
+def this_week_label(now: datetime | None = None) -> str:
+    start = last_sunday(now) + timedelta(days=1)
+    today = as_shanghai(now).date()
+    return f"{start.isoformat()} ~ {today.isoformat()}"
+
+
+def last_week_label(now: datetime | None = None) -> str:
+    end = last_sunday(now)
+    start = end - timedelta(days=6)
+    return f"{start.isoformat()} ~ {end.isoformat()}"
+
+
 def snapshot_from_member(
     army_id: int,
     snapshot_date: str,

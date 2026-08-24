@@ -15,6 +15,18 @@ class Settings:
     password: str
     arch_index: int
     snapshot_retention_days: int = 3
+    union_snapshot_retention_days: int = 15
+
+
+def _positive_int_env(name: str, default: str) -> int:
+    raw = os.getenv(name, default).strip() or default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是正整数") from exc
+    if value < 1:
+        raise ValueError(f"{name} 必须是正整数")
+    return value
 
 
 def load_settings() -> Settings:
@@ -28,16 +40,13 @@ def load_settings() -> Settings:
         raise ValueError("BQYX_ARCH_INDEX 必须是 0-7 的整数") from exc
     if not 0 <= arch_index <= 7:
         raise ValueError("BQYX_ARCH_INDEX 必须是 0-7 的整数")
-    raw_retention = os.getenv("BQYX_SNAPSHOT_RETENTION_DAYS", "3").strip() or "3"
-    try:
-        retention_days = int(raw_retention)
-    except ValueError as exc:
-        raise ValueError("BQYX_SNAPSHOT_RETENTION_DAYS 必须是正整数") from exc
-    if retention_days < 1:
-        raise ValueError("BQYX_SNAPSHOT_RETENTION_DAYS 必须是正整数")
     return Settings(
         username=username,
         password=password,
         arch_index=arch_index,
-        snapshot_retention_days=retention_days,
+        snapshot_retention_days=_positive_int_env("BQYX_SNAPSHOT_RETENTION_DAYS", "3"),
+        union_snapshot_retention_days=_positive_int_env(
+            "BQYX_UNION_SNAPSHOT_RETENTION_DAYS",
+            "15",
+        ),
     )

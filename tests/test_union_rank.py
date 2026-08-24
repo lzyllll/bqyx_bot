@@ -9,6 +9,7 @@ from bqyx_bot.handlers.union_rank import (
     _member_change,
     _rank_rows,
     _spec_need,
+    apply_weekly_contribution,
     parse_rank_range,
     resolve_rank_spec,
 )
@@ -172,3 +173,65 @@ async def test_fetch_union_rank_respects_limit():
 
     default = await fetch_union_rank(user)
     assert len(default) == 1000  # 默认拉满
+
+
+
+def test_parse_rank_range_weekly_commands():
+    assert parse_rank_range("本周周贡排行 90-110") == (90, 110)
+    assert parse_rank_range("上周周贡排行 100") == 100
+    assert parse_rank_range("本周周贡排行") is None
+
+
+def test_apply_weekly_contribution_uses_baseline_diff():
+    current = [
+        _row(1, contribution=12000, today_contribution=None),
+        _row(2, contribution=8000, today_contribution=None),
+        _row(3, contribution=5000, today_contribution=None),
+    ]
+    baseline = {
+        1: _row(1, contribution=10000),
+        2: _row(2, contribution=8000),
+    }
+    items = apply_weekly_contribution(current, baseline)
+    by_id = {item.union_id: item.today_contribution for item in items}
+    assert by_id[1] == 2000
+    assert by_id[2] == 0
+    assert by_id[3] is None
+
+
+def test_weekly_rank_window_centers_on_bound_army():
+    current = [_row(i, contribution=10000 + i, today_contribution=None) for i in range(1, 40)]
+    baseline = {i: _row(i, contribution=10000) for i in range(1, 40)}
+    items = apply_weekly_contribution(current, baseline)
+    rows, highlight = _rank_rows(items, "today_contribution", army_id=20)
+    assert highlight == 20
+    assert rows[0]["rank"] == 20 - RANK_WINDOW
+    assert rows[-1]["rank"] == 20 + RANK_WINDOW
+    assert len(rows) == RANK_WINDOW * 2 + 1
+    assert rows[RANK_WINDOW]["union_id"] == 20
+
+
+def test_renderer_score_label_weekly():
+    from bqyx_bot.union_rank_render import UnionRankRenderer
+
+    html = UnionRankRenderer().html(
+        title="本周周贡排行（实时）",
+        date_label="2026-08-24 ~ 2026-08-26",
+        rows=[
+            {
+                "rank": 1,
+                "union_id": 20,
+                "name": "本军",
+                "contribution": 12000,
+                "today_contribution": 2000,
+                "highlight": True,
+                "members_num": 10,
+                "member_change": "+1",
+            }
+        ],
+        captured_at="t",
+        score_label="周贡",
+    )
+    assert "周贡" in html
+    assert "日贡" not in html
+    assert "本军" in html

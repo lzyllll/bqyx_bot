@@ -1,9 +1,10 @@
-"""军队排行查询：昨日日贡排行 / 今日日贡排行 / 实时军队排行（图片渲染，高亮本军）。"""
+"""军队排行查询：昨日/今日日贡、本周/上周周贡、实时军队排行（图片渲染，高亮本军）。"""
 
 from __future__ import annotations
 
 import base64
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from ncatbot.core import registrar
@@ -11,9 +12,24 @@ from ncatbot.event.qq import GroupMessageEvent
 
 from ..context import BqyxServices
 from ..errors import BotError
-from ..hooks import error_reply, total_union_limit, union_live_limit, yesterday_union_limit
+from ..hooks import (
+    error_reply,
+    last_week_union_limit,
+    this_week_union_limit,
+    total_union_limit,
+    union_live_limit,
+    yesterday_union_limit,
+)
 from ..models import UnionSnapshot
-from ..schedule import SHANGHAI, report_date
+from ..schedule import (
+    SHANGHAI,
+    as_shanghai,
+    last_sunday,
+    last_week_label,
+    last_week_range,
+    report_date,
+    this_week_label,
+)
 from ..union_rank_render import UnionRankRenderer
 from .schedule import UNION_RANK_LIMIT, fetch_union_rank
 
@@ -49,6 +65,43 @@ def _contribution_change(current_contribution: int, prev: UnionSnapshot | None) 
     if diff == 0:
         return None
     return f"+{diff}" if diff > 0 else str(diff)
+
+
+def apply_weekly_contribution(
+    items: list[UnionSnapshot],
+    baseline: dict[int, UnionSnapshot],
+) -> list[UnionSnapshot]:
+    """用相对基线快照的总贡献差覆盖 today_contribution，作为周贡。"""
+    result = []
+    for item in items:
+        prev = baseline.get(int(item.union_id))
+        weekly = (
+            max(int(item.contribution) - int(prev.contribution), 0)
+            if prev is not None
+            else None
+        )
+        result.append(replace(item, today_contribution=weekly))
+    return result
+
+
+def snapshots_from_unions(unions, day: str, captured_at: str) -> list[UnionSnapshot]:
+    """把实时军队列表转成 UnionSnapshot（today_contribution 先留空）。"""
+    items = []
+    for union in unions:
+        items.append(
+            UnionSnapshot(
+                snapshot_date=day,
+                rank=0,
+                union_id=int(getattr(union, "id", 0) or 0),
+                name=str(getattr(union, "name", "") or ""),
+                level=int(getattr(union, "level", 0) or 0),
+                members_num=int(getattr(union, "members_num", 0) or 0),
+                contribution=int(getattr(union, "contribution", 0) or 0),
+                today_contribution=None,
+                captured_at=captured_at,
+            )
+        )
+    return items
 
 
 def parse_rank_range(text: str) -> tuple[int, int] | int | None:
@@ -274,6 +327,125 @@ class UnionRankHandlers(BqyxServices):
             show_daily=False,
         )
 
+    @error_reply
+    @this_week_union_limit
+    @registrar.on_group_command("本周周贡排行")
+    async def this_week_union_rank(self, event: GroupMessageEvent) -> None:
+        """本周周贡排行：实时拉取当前总贡献，对比上周末快照算本周新增。
+
+        默认以本群绑定军队为中心，前后各 6 名；可指定范围。
+        """
+        user, army_id = await self.require_army(str(event.group_id))
+        baseline_day = last_sunday().isoformat()
+        prev_items = await self.store.list_union_snapshots(baseline_day)
+        if not prev_items:
+            raise BotError(
+                f"还没有 {baseline_day} 的军队排行快照，无法计算本周周贡，请等采集满一周后再试。"
+            )
+        unions = await fetch_union_rank(user)
+        if not unions:
+            raise BotError("获取军队排行失败，请稍后再试。")
+        captured_at = datetime.now(timezone.utc).isoformat()
+        live_items = snapshots_from_unions(
+            unions,
+            as_shanghai().date().isoformat(),
+            captured_at,
+        )
+        items = apply_weekly_contribution(
+            live_items,
+            {item.union_id: item for item in prev_items},
+        )
+        await self._send_weekly_rank(
+            event,
+            items=items,
+            army_id=army_id,
+            spec=parse_rank_range(event.message.text),
+            title="本周周贡排行（实时）",
+            date_label=this_week_label(),
+            captured_at=captured_at,
+            member_prev_day=baseline_day,
+            missing_baseline_message=(
+                f"没有 {baseline_day} 的匹配军队，本周周贡暂无法计算。"
+            ),
+        )
+
+    @error_reply
+    @last_week_union_limit
+    @registrar.on_group_command("上周周贡排行")
+    async def last_week_union_rank(self, event: GroupMessageEvent) -> None:
+        """上周周贡排行：读上周末与再上周末快照的总贡献差。
+
+        默认以本群绑定军队为中心，前后各 6 名；可指定范围。
+        """
+        _, army_id = await self.require_army(str(event.group_id))
+        start_day, end_day = last_week_range()
+        end_items = await self.store.list_union_snapshots(end_day)
+        if not end_items:
+            raise BotError(
+                f"还没有 {end_day} 的军队排行快照，无法计算上周周贡，请等采集满一周后再试。"
+            )
+        start_items = await self.store.list_union_snapshots(start_day)
+        if not start_items:
+            raise BotError(
+                f"还没有 {start_day} 的军队排行快照，无法计算上周周贡，请等采集满两周后再试。"
+            )
+        items = apply_weekly_contribution(
+            end_items,
+            {item.union_id: item for item in start_items},
+        )
+        await self._send_weekly_rank(
+            event,
+            items=items,
+            army_id=army_id,
+            spec=parse_rank_range(event.message.text),
+            title="上周周贡排行",
+            date_label=last_week_label(),
+            captured_at=end_items[0].captured_at,
+            member_prev_day=start_day,
+            missing_baseline_message=(
+                f"没有 {start_day} 的匹配军队，上周周贡暂无法计算。"
+            ),
+        )
+
+    async def _send_weekly_rank(
+        self,
+        event: GroupMessageEvent,
+        *,
+        items: list[UnionSnapshot],
+        army_id: int,
+        spec: tuple[int, int] | int | None,
+        title: str,
+        date_label: str,
+        captured_at: str,
+        member_prev_day: str,
+        missing_baseline_message: str,
+    ) -> None:
+        """周贡排行共用发送：按周贡排序，默认本军上下 6 名。"""
+        if all(item.today_contribution is None for item in items):
+            raise BotError(missing_baseline_message)
+        center_rank, window = resolve_rank_spec(spec, len(items))
+        rows, highlight = _rank_rows(
+            items,
+            "today_contribution",
+            army_id,
+            window=window,
+            center_rank=center_rank,
+        )
+        if not rows:
+            raise BotError("指定的排行范围无效。")
+        if spec is None and highlight is None:
+            raise BotError("本群军队不在前 1000 排行中。")
+        await self._with_member_change(rows, prev_day=member_prev_day)
+        await self._send_rank(
+            event,
+            title=title,
+            date_label=date_label,
+            rows=rows,
+            captured_at=captured_at,
+            show_daily=True,
+            score_label="周贡",
+        )
+
     async def _live_union_snapshots(
         self,
         user,
@@ -328,9 +500,14 @@ class UnionRankHandlers(BqyxServices):
                 return items
             limit = min(limit + 100, UNION_RANK_LIMIT)
 
-    async def _with_member_change(self, rows: list[dict]) -> None:
-        """为展示行注入人数变动标注（对比前天快照，利用 3 天保留窗口）。"""
-        prev_day = (datetime.now(SHANGHAI) - timedelta(days=2)).date().isoformat()
+    async def _with_member_change(
+        self,
+        rows: list[dict],
+        prev_day: str | None = None,
+    ) -> None:
+        """为展示行注入人数变动标注。默认对比前天快照。"""
+        if prev_day is None:
+            prev_day = (datetime.now(SHANGHAI) - timedelta(days=2)).date().isoformat()
         prev_map = {
             item.union_id: item
             for item in await self.store.list_union_snapshots(prev_day)
@@ -348,6 +525,7 @@ class UnionRankHandlers(BqyxServices):
         rows: list[dict],
         captured_at: str,
         show_daily: bool = True,
+        score_label: str | None = None,
     ) -> None:
         renderer = UnionRankRenderer()
         html = renderer.html(
@@ -356,6 +534,7 @@ class UnionRankHandlers(BqyxServices):
             rows=rows,
             captured_at=_fmt_local(captured_at),
             show_daily=show_daily,
+            score_label=score_label,
         )
         png = await renderer.to_png(html)
         b64_str = base64.b64encode(png).decode("utf-8")

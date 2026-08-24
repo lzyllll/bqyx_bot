@@ -26,13 +26,17 @@ class UnionRankRenderer:
         rows: list[dict],
         captured_at: str | None = None,
         show_daily: bool = True,
+        score_label: str | None = None,
     ) -> str:
+        if not score_label:
+            score_label = "日贡" if show_daily else "较昨日"
         return self.env.get_template("union_rank.j2").render(
             title=title,
             date_label=date_label,
             rows=rows,
             captured_at=captured_at,
             show_daily=show_daily,
+            score_label=score_label,
         )
 
     async def to_png(self, html: str) -> bytes:

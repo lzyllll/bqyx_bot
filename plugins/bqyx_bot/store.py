@@ -17,9 +17,10 @@ def _utc_now() -> str:
 
 
 class SqliteStore:
-    def __init__(self, path: Path, retention_days: int = 3) -> None:
+    def __init__(self, path: Path, retention_days: int = 3, union_retention_days: int | None = None) -> None:
         self.path = Path(path)
         self.retention_days = retention_days
+        self.union_retention_days = retention_days if union_retention_days is None else union_retention_days
         self._lock = asyncio.Lock()
 
     async def init(self) -> None:
@@ -502,14 +503,14 @@ class SqliteStore:
             conn.commit()
 
     def _prune_old_union_snapshots(self, conn: sqlite3.Connection) -> None:
-        """删除超过保留天数的军队排行快照（保留 3 天）。
+        """删除超过保留天数的军队排行快照（默认 15 天）。
 
         retention_days <= 0 表示不清理。
         """
-        if self.retention_days <= 0:
+        if self.union_retention_days <= 0:
             return
         cutoff = (
-            datetime.now(SHANGHAI) - timedelta(days=self.retention_days - 1)
+            datetime.now(SHANGHAI) - timedelta(days=self.union_retention_days - 1)
         ).date().isoformat()
         conn.execute(
             "DELETE FROM union_snapshot WHERE snapshot_date < ?",

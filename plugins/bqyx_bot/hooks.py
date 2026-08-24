@@ -146,7 +146,9 @@ class GroupRateLimiter:
 
 query_limit = GroupRateLimiter(max_calls=15, period=60)
 auto_bind_limit = GroupRateLimiter(max_calls=3, period=60)
-# 排行查询限流：今日日贡排行（实时）2 次/分；昨日日贡排行/实时军队排行各 6 次/分
+# 排行查询限流：今日日贡/本周周贡（实时）2 次/分；昨日日贡/上周周贡/实时军队排行各 6 次/分
 union_live_limit = GroupRateLimiter(max_calls=2, period=60, name="今日日贡")
 yesterday_union_limit = GroupRateLimiter(max_calls=6, period=60, name="昨日日贡")
 total_union_limit = GroupRateLimiter(max_calls=6, period=60, name="实时军队排行")
+this_week_union_limit = GroupRateLimiter(max_calls=2, period=60, name="本周周贡")
+last_week_union_limit = GroupRateLimiter(max_calls=6, period=60, name="上周周贡")
