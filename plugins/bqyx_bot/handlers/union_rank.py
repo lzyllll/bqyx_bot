@@ -329,7 +329,7 @@ class UnionRankHandlers(BqyxServices):
 
     @error_reply
     @this_week_union_limit
-    @registrar.on_group_command("本周周贡排行")
+    @registrar.on_group_command("本周周贡排行", "本周周贡")
     async def this_week_union_rank(self, event: GroupMessageEvent) -> None:
         """本周周贡排行：实时拉取当前总贡献，对比上周末快照算本周新增。
 
@@ -371,7 +371,7 @@ class UnionRankHandlers(BqyxServices):
 
     @error_reply
     @last_week_union_limit
-    @registrar.on_group_command("上周周贡排行")
+    @registrar.on_group_command("上周周贡排行", "上周周贡")
     async def last_week_union_rank(self, event: GroupMessageEvent) -> None:
         """上周周贡排行：读上周末与再上周末快照的总贡献差。
 

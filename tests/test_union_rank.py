@@ -180,6 +180,8 @@ def test_parse_rank_range_weekly_commands():
     assert parse_rank_range("本周周贡排行 90-110") == (90, 110)
     assert parse_rank_range("上周周贡排行 100") == 100
     assert parse_rank_range("本周周贡排行") is None
+    assert parse_rank_range("本周周贡 90-110") == (90, 110)
+    assert parse_rank_range("上周周贡 100") == 100
 
 
 def test_apply_weekly_contribution_uses_baseline_diff():
