@@ -19,22 +19,24 @@ class QueryHandlers(BqyxServices):
         self,
         event: GroupMessageEvent,
         target: At | None = None,
+        format_type: str = "图片",
     ) -> None:
         """查询自己的修罗地图，或通过 @用户 查询其已绑定的存档。"""
         group_id = str(event.group_id)
+        if target in ('图片','文本'):
+            format_type = target
+            target = None
         qq_id = str(target.user_id if target else event.user_id)
         bind = await self.store.get_user_bind(group_id, qq_id)
         if bind is None:
             if target is None:
                 raise UserNotBoundError()
             raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
-
-        format_type = parse_format(event.message.text, "图片")
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
         result = DemonWeekService().parse_archive(account)
 
-        title = "我的修罗地图" if target is None else f"QQ {qq_id} 的修罗地图"
+        title =  f"{account.title} 的修罗地图"
         await self.replies.send_demon(event, result, format_type, title=title)
 
     @error_reply
