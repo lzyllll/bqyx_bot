@@ -52,6 +52,7 @@ class BqyxBotPlugin(
         self.things = MyThingsService(resource_dir(), icon_dir(), archive_store_dir())
         await self.account.warmup()
         self._nightly_lock = asyncio.Lock()
+        # 这里不仅仅是采集，采集后还会清理过期快照，避免占用过多空间
         if not self.add_scheduled_task(
             "capture_members",
             "23:30",
@@ -64,6 +65,8 @@ class BqyxBotPlugin(
             callback=self.capture_unions,
         ):
             self.logger.warning("注册 23:59 军队排行采集任务失败")
+
+        # 指令每日清理
         if not self.add_scheduled_task(
             "prune_command_call_stats",
             "00:10",

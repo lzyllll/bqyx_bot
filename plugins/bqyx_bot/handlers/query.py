@@ -110,14 +110,11 @@ class QueryHandlers(BqyxServices):
         if union_id <= 0:
             raise BotError("军队 ID 必须是正整数")
         user = await self.account.get_user()
-        members = (await user.get_members(union_id)).sort(
-            key=lambda m: m.detail.conDay,
-            reverse=True,
-        )
+        union = await user.get_union_info(union_id)
         bind = await self.optional_bind(str(event.group_id), str(event.user_id))
         await self.replies.send_union_info(
             event,
-            members,
+            union,
             "图片",
         )
 
