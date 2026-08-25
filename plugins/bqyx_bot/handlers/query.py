@@ -103,6 +103,23 @@ class QueryHandlers(BqyxServices):
             file_prefix="members",
             uid=bind.uid if bind else None,
         )
+    @error_reply
+    @command_rate_limit(name="/union")
+    @registrar.on_group_command("/union", ignore_case=True)
+    async def check_members_by_id(self, event: GroupMessageEvent, union_id: int) -> None:
+        if union_id <= 0:
+            raise BotError("军队 ID 必须是正整数")
+        user = await self.account.get_user()
+        members = (await user.get_members(union_id)).sort(
+            key=lambda m: m.detail.conDay,
+            reverse=True,
+        )
+        bind = await self.optional_bind(str(event.group_id), str(event.user_id))
+        await self.replies.send_union_info(
+            event,
+            members,
+            "图片",
+        )
 
     @error_reply
     @command_rate_limit(name="/domain")
