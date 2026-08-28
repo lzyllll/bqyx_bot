@@ -29,15 +29,31 @@
 
 ## BQYX Bot 一键绑定
 
-群内发送 `一键绑定` 后，机器人会依据 QQ 群昵称与军队角色名自动建立绑定。默认使用快速文本匹配，不会安装或下载语义模型。
+群内发送 `一键绑定` 后，机器人会依据 QQ 群昵称与军队角色名自动建立绑定。默认使用快速文本匹配：RapidFuzz 计算文本相似度，再由 `linear_sum_assignment` 做全局一对一分配。此模式不需要下载语义模型。
 
-如需启用 SentenceTransformer 语义匹配，可安装可选依赖：
+### 安装模式
+
+`semantic-bind` 是可选依赖（extra），不会被默认安装。根据需要选择以下一种命令：
+
+| 目标 | 命令 | 一键绑定行为 |
+|------|------|-------------|
+| 仅使用默认依赖 | `uv sync` | 仅文本匹配，不加载模型 |
+| 启用语义匹配 | `uv sync --extra semantic-bind` | 文本匹配 + SentenceTransformer 语义匹配 |
+| 安装全部可选依赖 | `uv sync --all-extras` | 启用所有 extras，包含语义匹配 |
+
+启用语义匹配的服务器应使用：
 
 ```powershell
 uv sync --extra semantic-bind
 ```
 
-安装该 extra 后，机器人会在一键绑定时自动补充语义匹配；第一次使用会下载 `paraphrase-multilingual-MiniLM-L12-v2` 模型。该 extra 同时安装 `httpx[socks]`，支持配置 SOCKS 代理下载模型。未安装 extra 时会自动回退到 RapidFuzz 文本评分与 `linear_sum_assignment` 全局一对一分配，不影响一键绑定功能。
+安装后，机器人会在一键绑定时自动补充语义匹配；第一次使用会下载 `paraphrase-multilingual-MiniLM-L12-v2` 模型。该 extra 同时安装 `httpx[socks]`（含 `socksio`），因此可通过 SOCKS 代理下载模型。
+
+### `uv sync` 卸载模型包的原因
+
+`uv sync` 会将虚拟环境严格同步到命令指定的依赖集合。单独执行 `uv sync` 时，该集合只包含默认依赖，不包含 `semantic-bind`，因此 uv 会卸载 `sentence-transformers`、`torch`、`transformers` 等语义匹配包。这表示 extra 没有被删除，只是本次同步没有要求安装它。
+
+需要恢复语义匹配时，再运行一次 `uv sync --extra semantic-bind` 即可。该命令不会影响其他默认依赖；已下载的 Hugging Face 模型缓存通常也不会被 `uv sync` 删除，重新安装 Python 包后可继续使用缓存。
 
 ## BQYX Bot 限流
 
