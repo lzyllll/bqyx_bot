@@ -188,15 +188,21 @@ class BindHandlers(BqyxServices):
         ]
 
         raw_game_members = await user.get_members(army_id)
-        game_members = [
-            GameMember(
-                uid=str(member.uid),
-                arch_index=int(member.index),
-                nickname=str(member.detail.playerName).strip(),
+        game_members = []
+        for member in raw_game_members:
+            detail = getattr(member, "detail", None)
+            nickname = getattr(detail, "playerName", None) or getattr(
+                member, "nickname", None
             )
-            for member in raw_game_members
-            if getattr(member.detail, "playerName", None)
-        ]
+            if not nickname:
+                continue
+            game_members.append(
+                GameMember(
+                    uid=str(member.uid),
+                    arch_index=int(member.index),
+                    nickname=str(nickname).strip(),
+                )
+            )
 
         await event.reply(
             f"开始规则匹配 {len(qq_members)} 个群成员和 {len(game_members)} 个游戏玩家..."
