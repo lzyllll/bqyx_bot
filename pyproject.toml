@@ -13,6 +13,7 @@ dependencies = [
     "pyautogui>=0.9.54",
     "pyperclip>=1.9.0",
     "bqyx-api[render]",
+    "sentence-transformers>=6.0.0",
 ]
 
 [tool.uv.sources]
