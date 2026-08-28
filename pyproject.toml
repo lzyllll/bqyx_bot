@@ -13,7 +13,12 @@ dependencies = [
     "pyautogui>=0.9.54",
     "pyperclip>=1.9.0",
     "bqyx-api[render]",
+]
+
+[project.optional-dependencies]
+semantic-bind = [
     "sentence-transformers>=6.0.0",
+    "httpx[socks]>=0.27",
 ]
 
 [tool.uv.sources]
