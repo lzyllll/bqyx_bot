@@ -145,7 +145,7 @@ wheels = [
 
 [[package]]
 name = "bqyx-api"
-source = { editable = "../bqyx_api" }
+source = { editable = "lib/bqyx_api" }
 dependencies = [
     { name = "aiohttp" },
     { name = "ddddocr" },
@@ -896,7 +896,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bqyx-api", extras = ["render"], editable = "../bqyx_api" },
+    { name = "bqyx-api", extras = ["render"], editable = "lib/bqyx_api" },
     { name = "httpx", extras = ["socks"], marker = "extra == 'semantic-bind'", specifier = ">=0.27" },
     { name = "ncatbot5" },
     { name = "pyautogui", specifier = ">=0.9.54" },

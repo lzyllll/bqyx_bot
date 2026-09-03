@@ -1,0 +1,3 @@
+[submodule "lib/bqyx_api"]
+	path = lib/bqyx_api
+	url = https://github.com/lzyllll/bqyx_api.git

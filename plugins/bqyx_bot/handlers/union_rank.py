@@ -188,7 +188,7 @@ def _fmt_local(iso_utc: str) -> str:
 class UnionRankHandlers(BqyxServices):
     @error_reply
     @yesterday_union_limit
-    @registrar.on_group_command("昨日日贡排行")
+    @registrar.on_group_command("昨日日贡排行","昨日贡献排行")
     async def yesterday_union_rank(self, event: GroupMessageEvent) -> None:
         """昨日日贡排行：读昨日快照的当日新增贡献。
 
@@ -228,7 +228,7 @@ class UnionRankHandlers(BqyxServices):
 
     @error_reply
     @union_live_limit
-    @registrar.on_group_command("今日日贡排行")
+    @registrar.on_group_command("今日日贡排行",'今日贡献排行')
     async def today_union_rank(self, event: GroupMessageEvent) -> None:
         """今日日贡排行：实时拉取当前数据，对比昨晚快照算当日新增。"""
         user, army_id = await self.require_army(str(event.group_id))

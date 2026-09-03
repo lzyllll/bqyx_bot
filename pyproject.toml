@@ -22,7 +22,7 @@ semantic-bind = [
 ]
 
 [tool.uv.sources]
-bqyx-api = { path = "../bqyx_api", editable = true }
+bqyx-api = { path = "lib/bqyx_api", editable = true }
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
