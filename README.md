@@ -34,6 +34,10 @@ git submodule sync
 git submodule update --init --recursive
 ```
 
+> [!NOTE]
+> **为什么需要 `git submodule sync`？**
+> Git 首次初始化子模块后，会将远程仓库 URL 固化缓存在本地 `.git/config` 中。当主仓库修改了子模块地址（例如从 HTTPS 改为 SSH）时，直接 `git pull` 无法自动刷新本地缓存的 URL。必须执行 `git submodule sync`，Git 才会读取 `.gitmodules` 中的最新 URL 覆盖并同步本地配置，确保后续拉取使用新地址。
+
 ---
 
 ### 3. 配置修改
@@ -63,15 +67,18 @@ cp .env.example .env
 
 ### 4. 安装依赖
 
-根据是否需要语义匹配选择安装命令：
+根据服务器硬件资源与是否需要 AI 语义匹配选择安装命令：
 
 ```bash
-# 默认安装（仅使用 RapidFuzz 快速文本匹配）
+# 默认安装（推荐低配服务器使用：仅 RapidFuzz 快速文本匹配，内存占用 ~100MB）
 uv sync
 
-# 推荐：启用语义匹配（首次使用会自动下载语义模型）
+# 启用 AI 语义匹配（识别率更高，但较消耗内存与磁盘资源）
 uv sync --extra semantic-bind
 ```
+
+> [!WARNING]
+> **资源消耗提示**：AI 语义匹配依赖 PyTorch 与 Hugging Face Transformers，需额外占用 **2~3GB 磁盘空间**，运行时内存开销约为 **1.5GB ~ 2GB**。首次使用还会自动从网络下载约 470MB 的多语言语言模型。**如果云服务器内存 $\le 1\text{GB}$，请务必使用默认的 `uv sync`**，以避免因内存耗尽（OOM）被系统杀死。
 
 ---
 
@@ -162,21 +169,24 @@ systemctl restart bqyx_bot
 
 ### 安装模式
 
-`semantic-bind` 是可选依赖（extra），不会被默认安装。根据需要选择以下一种命令：
+`semantic-bind` 是可选依赖（extra），不会被默认安装。由于引入深度学习模型较为消耗资源，建议根据服务器硬件配置进行选择：
 
-| 目标 | 命令 | 一键绑定行为 |
-|------|------|-------------|
-| 仅使用默认依赖 | `uv sync` | 仅文本匹配，不加载模型 |
-| 启用语义匹配 | `uv sync --extra semantic-bind` | 文本匹配 + SentenceTransformer 语义匹配 |
-| 安装全部可选依赖 | `uv sync --all-extras` | 启用所有 extras，包含语义匹配 |
+| 目标 | 命令 | 一键绑定行为 | 资源消耗与硬件要求 |
+|------|------|-------------|-------------------|
+| **仅使用默认依赖**（推荐） | `uv sync` | 仅文本匹配，不加载模型 | **极低**：内存约 100MB，磁盘几十 MB，适合 1G 内存服务器 |
+| **启用语义匹配** | `uv sync --extra semantic-bind` | 文本匹配 + SentenceTransformer 语义匹配 | **较高**：内存推荐 $\ge$ 2GB，需下载模型并额外占用约 2~3GB 磁盘 |
+| **安装全部可选依赖** | `uv sync --all-extras` | 启用所有 extras（当前等同于上者） | **较高**：包含语义匹配及其所有深度学习依赖 |
+
+> [!CAUTION]
+> **关于 AI 语义匹配的资源与网络开销**：
+> 1. **内存与磁盘**：启用后会安装 `torch` 与 `transformers` 等庞大依赖，磁盘占用增加约 2~3GB，运行时常驻内存约 1.5GB ~ 2GB。内存低于 2GB 的机器极易出现 OOM（内存溢出）导致服务被杀。
+> 2. **模型下载与代理**：首次运行一键绑定时会自动从 Hugging Face 下载 `paraphrase-multilingual-MiniLM-L12-v2` 模型（约 470MB）。国内服务器可能需要配置代理访问 Hugging Face；该 extra 已自带 `httpx[socks]`，支持通过 SOCKS/HTTP 代理拉取模型。
 
 启用语义匹配的服务器应使用：
 
-```powershell
+```bash
 uv sync --extra semantic-bind
 ```
-
-安装后，机器人会在一键绑定时自动补充语义匹配；第一次使用会下载 `paraphrase-multilingual-MiniLM-L12-v2` 模型。该 extra 同时安装 `httpx[socks]`（含 `socksio`），因此可通过 SOCKS 代理下载模型。
 
 ### `uv sync` 卸载模型包的原因
 
