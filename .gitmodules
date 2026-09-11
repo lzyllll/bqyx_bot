@@ -1,3 +1,4 @@
 [submodule "lib/bqyx_api"]
 	path = lib/bqyx_api
 	url = git@github.com:lzyllll/bqyx_api.git
+	branch = main
