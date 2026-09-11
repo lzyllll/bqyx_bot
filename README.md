@@ -1,31 +1,160 @@
-# NcatBot 用户参考资料
+# BQYX Bot (爆枪英雄 QQ 机器人)
 
-解压到你的**项目根目录**即可使用。
+基于 NcatBot 框架与 `bqyx_api` 开发的爆枪英雄军队与账号管理 QQ 机器人。
+
+---
+
+## 快速部署指南
+
+### 1. 环境准备
+
+- **Python**: `>= 3.13`
+- **[uv](https://docs.astral.sh/uv/)**: 推荐的 Python 包管理器
+  - Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Windows: `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- **Git & GitHub SSH Key**:
+  - 由于项目子模块 `lib/bqyx_api` 采用 SSH 协议拉取，请确保部署机器已配置好 GitHub SSH Key。
+  - 测试连通性：`ssh -T git@github.com`（出现 `Hi username!` 即表示配置成功）。
+- **OneBot11 服务**: 如 [NapCat](https://napneko.github.io/)，需开启正向 WebSocket 服务。
+
+---
+
+### 2. 克隆项目与子模块
+
+**方式 A：克隆时直接初始化子模块（推荐）**
+```bash
+git clone --recursive git@github.com:lzyllll/bqyx_bot.git
+cd bqyx_bot
+```
+
+**方式 B：若已克隆主仓库，补拉子模块**
+```bash
+cd bqyx_bot
+git submodule sync
+git submodule update --init --recursive
+```
+
+---
+
+### 3. 配置修改
+
+#### (1) 机器人与 OneBot 配置：`config.yaml`
+```bash
+cp config.example.yaml config.yaml
+```
+根据实际环境编辑 `config.yaml`：
+- `bot_uin`: 机器人 QQ 号
+- `root`: 管理员 QQ 号
+- `adapters[type=napcat]`:
+  - `ws_uri`: NapCat 的 WebSocket 连接地址（如 `ws://127.0.0.1:3001`）
+  - `ws_token`: 若 NapCat 设置了 token，在此填写
+
+#### (2) 游戏账号与数据配置：`.env`
+```bash
+cp .env.example .env
+```
+根据实际账号编辑 `.env`：
+- `BQYX_USERNAME`: 4399 账号用户名
+- `BQYX_PASSWORD`: 4399 账号密码
+- `BQYX_ARCH_INDEX`: 存档槽位（默认 `4`，取值 `0-7`）
+- `BQYX_RESOURCE_DIR` / `BQYX_ASSETS_DIR`: 静态资源及素材路径（如有需渲染图片）
+
+---
+
+### 4. 安装依赖
+
+根据是否需要语义匹配选择安装命令：
+
+```bash
+# 默认安装（仅使用 RapidFuzz 快速文本匹配）
+uv sync
+
+# 推荐：启用语义匹配（首次使用会自动下载语义模型）
+uv sync --extra semantic-bind
+```
+
+---
+
+### 5. 运行机器人
+
+#### 本地 / 前台测试运行
+```bash
+uv run python main.py
+```
+
+#### Linux 服务器后台运行 (推荐 Systemd 服务)
+
+创建服务文件 `/etc/systemd/system/bqyx_bot.service`：
+```ini
+[Unit]
+Description=BQYX QQ Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/lzyllll/bqyx/bqyx_bot
+ExecStart=/root/.local/bin/uv run python main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+> 注：请将上述 `User`、`WorkingDirectory` 和 `uv` 执行路径替换为服务器实际路径（可用 `which uv` 查看路径）。
+
+管理服务命令：
+```bash
+# 重载服务
+systemctl daemon-reload
+
+# 启动并设置开机自启
+systemctl enable --now bqyx_bot
+
+# 查看运行状态与日志
+systemctl status bqyx_bot
+journalctl -u bqyx_bot -f
+```
+
+---
+
+### 6. 日常更新与维护
+
+当主仓库或 `bqyx_api` 子模块有代码更新时，在服务器根目录执行以下步骤：
+
+```bash
+cd /home/lzyllll/bqyx/bqyx_bot
+
+# 1. 拉取主仓库最新提交
+git pull origin main
+
+# 2. 同步并更新子模块（主仓库已锁定对应的子模块版本）
+git submodule sync
+git submodule update --init --recursive
+
+# 3. （可选）如果想直接跟踪并拉取 bqyx_api 的最新 main 分支代码
+# git submodule update --remote --merge
+
+# 4. 同步依赖
+uv sync
+
+# 5. 重启服务
+systemctl restart bqyx_bot
+```
+
+---
 
 ## 目录总览
 
 | 路径 | 说明 |
 |------|------|
-| `.agents/skills/` | AI Agent 技能文件，配合 VS Code Copilot 等 AI 助手使用 |
-| `docs/docs/examples/` | 示例代码（qq / github / cross_platform / common …） |
-| `docs/docs/notes/guide/` | 从入门到进阶的使用指南 |
-| `docs/docs/notes/reference/` | 所有模块的 API 参考文档 |
-
-## 核心 Skills（AI 助手请优先阅读）
-
-| Skill | 路径 | 用途 |
-|-------|------|------|
-| framework-usage | `.agents/skills/framework-usage/SKILL.md` | 开发 Bot：插件、事件、消息、CLI |
-| testing-framework | `.agents/skills/testing-framework/SKILL.md` | 编写与运行测试 |
-| plugin-migration | `.agents/skills/plugin-migration/SKILL.md` | 从 v4 迁移到 v5 |
-
-> **AI Agent 提示**：遇到用户的 NcatBot 开发问题时，先阅读对应 Skill 文件获取完整指引。
-
-## 关键文档入口
-
-- `docs/docs/notes/guide/README.md` — 指南索引（快速开始、插件开发、消息发送…）
-- `docs/docs/notes/reference/README.md` — API 参考索引（按用途查找类与方法）
-- `docs/docs/examples/README.md` — 示例索引（按平台与难度分类）
+| `main.py` | 机器人启动入口 |
+| `plugins/bqyx_bot/` | BQYX Bot 业务插件及各类指令处理器 |
+| `lib/bqyx_api/` | 游戏底层接口与存档解析核心库（Submodule） |
+| `.agents/skills/` | AI Agent 技能文件，配合 AI 助手使用 |
+| `docs/docs/notes/guide/` | NcatBot 框架入门到进阶指南 |
+| `docs/docs/notes/reference/` | NcatBot 模块 API 参考文档 |
 
 ## BQYX Bot 一键绑定
 
