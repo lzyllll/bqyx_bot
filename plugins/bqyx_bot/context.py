@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from bqyx_api.api import GameUser
+from bqyx_api.archive import DemonWeekService
 from bqyx_api.archive.player.service import PlayerBonusService
 from bqyx_api.archive.things import MyThingsService
 from bqyx_api.archive.union import UnionDefineService
@@ -25,6 +26,7 @@ class BqyxServices:
     things: MyThingsService
     player_bonus: PlayerBonusService
     union_defines: UnionDefineService
+    demon_week: DemonWeekService
     api: Any
 
     async def require_army(self, group_id: str) -> tuple[GameUser, int]:

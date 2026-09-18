@@ -2,8 +2,6 @@ from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent
 from ncatbot.types import At, MessageArray
 
-from bqyx_api.archive import DemonWeekService
-
 from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
 from ..hooks import command_rate_limit, error_reply, my_dps_limit
@@ -98,7 +96,7 @@ class QueryHandlers(BqyxServices):
             raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
-        result = DemonWeekService().parse_archive(account)
+        result = self.demon_week.parse_archive(account)
 
         title =  f"{account.title} 的修罗地图"
         await self.replies.send_demon(event, result, format_type, title=title)

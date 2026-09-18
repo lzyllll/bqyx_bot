@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from bqyx_api.archive.paths import archive_store_dir, icon_dir, resource_dir
+from bqyx_api.archive import DemonWeekService
 from bqyx_api.archive.player.service import PlayerBonusService
 from bqyx_api.archive.things import MyThingsService
 from bqyx_api.archive.union import UnionDefineService
@@ -37,6 +37,7 @@ class BqyxBotPlugin(
     things: MyThingsService
     player_bonus: PlayerBonusService
     union_defines: UnionDefineService
+    demon_week: DemonWeekService
     name = "bqyx_bot"
     version = "1.0.0"
     author = "lzy"
@@ -52,10 +53,11 @@ class BqyxBotPlugin(
         await self.store.init()
         self.account = AccountService(self.settings, self.store, self.logger)
         self.replies = ReplyService(self.api, self.workspace)
-        # 资源/图标/快照目录均从 .env 读取（BQYX_RESOURCE_DIR/BQYX_ASSETS_DIR/BQYX_ARCHIVE_STORE）
-        self.things = MyThingsService(resource_dir(), icon_dir(), archive_store_dir())
+        # 服务所需资源、图标、快照及 TS 包默认参数均由 bqyx_api.archive.paths 集中管理，开箱即用
+        self.things = MyThingsService()
         self.player_bonus = PlayerBonusService()
-        self.union_defines = UnionDefineService(resource_dir())
+        self.union_defines = UnionDefineService()
+        self.demon_week = DemonWeekService()
         await self.account.warmup()
         self._nightly_lock = asyncio.Lock()
         # 这里不仅仅是采集，采集后还会清理过期快照，避免占用过多空间
