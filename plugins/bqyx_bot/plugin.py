@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from bqyx_api.archive.paths import archive_store_dir, icon_dir, resource_dir
+from bqyx_api.archive.player.service import PlayerBonusService
 from bqyx_api.archive.things import MyThingsService
 from ncatbot.plugin import NcatBotPlugin
 from .account import AccountService
@@ -33,6 +34,7 @@ class BqyxBotPlugin(
     account: AccountService
     replies: ReplyService
     things: MyThingsService
+    player_bonus: PlayerBonusService
     name = "bqyx_bot"
     version = "1.0.0"
     author = "lzy"
@@ -50,6 +52,7 @@ class BqyxBotPlugin(
         self.replies = ReplyService(self.api, self.workspace)
         # 资源/图标/快照目录均从 .env 读取（BQYX_RESOURCE_DIR/BQYX_ASSETS_DIR/BQYX_ARCHIVE_STORE）
         self.things = MyThingsService(resource_dir(), icon_dir(), archive_store_dir())
+        self.player_bonus = PlayerBonusService()
         await self.account.warmup()
         self._nightly_lock = asyncio.Lock()
         # 这里不仅仅是采集，采集后还会清理过期快照，避免占用过多空间
@@ -76,9 +79,9 @@ class BqyxBotPlugin(
         self.logger.info("%s 已加载", self.name)
 
     async def on_close(self) -> None:
-        if getattr(self, "_player_bonus_service", None) is not None:
+        if hasattr(self, "player_bonus") and self.player_bonus is not None:
             try:
-                self._player_bonus_service.close()
+                self.player_bonus.close()
             except Exception:
                 pass
         await self.store.close()

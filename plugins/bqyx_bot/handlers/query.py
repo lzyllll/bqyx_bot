@@ -9,7 +9,10 @@ from ..errors import BotError, UserNotBoundError
 from ..hooks import command_rate_limit, error_reply, my_dps_limit
 from ..models import ContributionKind
 from ..parsing import parse_format, parse_format_and_limit
-
+from bqyx_api.archive.player.render import (
+    render_role_bonus_image_async,
+    render_role_panel_image_async,
+)
 
 class QueryHandlers(BqyxServices):
     @error_reply
@@ -49,7 +52,7 @@ class QueryHandlers(BqyxServices):
             except Exception:
                 pass
 
-        service = self.player_bonus()
+        service = self.player_bonus
         view = service.get_role_panel(
             account,
             union_info=union_info,
@@ -63,11 +66,6 @@ class QueryHandlers(BqyxServices):
             union_info=union_info,
             member_info=member_info,
             member_list=member_list,
-        )
-
-        from bqyx_api.archive.player.render import (
-            render_role_bonus_image_async,
-            render_role_panel_image_async,
         )
 
         panel_png = await render_role_panel_image_async(view)

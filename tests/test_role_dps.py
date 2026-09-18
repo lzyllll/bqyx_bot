@@ -111,13 +111,13 @@ async def test_check_my_dps_success_flow():
     handlers.store = store
     handlers.account = account_service
     handlers.replies = reply_mock
-    handlers.player_bonus = MagicMock(return_value=player_bonus_mock)
+    handlers.player_bonus = player_bonus_mock
 
     event = FakeEvent()
 
     with (
-        patch("bqyx_api.archive.player.render.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
-        patch("bqyx_api.archive.player.render.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
+        patch("bqyx_bot.handlers.query.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
+        patch("bqyx_bot.handlers.query.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
     ):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event)
 
@@ -130,3 +130,4 @@ async def test_check_my_dps_success_flow():
         b"mod_png",
         title="大罗金仙 的战力",
     )
+

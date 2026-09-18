@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from bqyx_api.api import GameUser
+from bqyx_api.archive.player.service import PlayerBonusService
 from bqyx_api.archive.things import MyThingsService
 from bqyx_api.archive.union import UnionDefineService
 
@@ -22,9 +23,9 @@ class BqyxServices:
     account: AccountService
     replies: ReplyService
     things: MyThingsService
+    player_bonus: PlayerBonusService
     api: Any
-    _union_service: UnionDefineService | None
-    _player_bonus_service: Any = None
+    _union_service: UnionDefineService | None = None
 
     async def require_army(self, group_id: str) -> tuple[GameUser, int]:
         army_id = await self.store.get_group_army(group_id)
@@ -37,19 +38,10 @@ class BqyxServices:
         return await self.store.get_user_bind(str(group_id), str(qq_id))
 
     def union_defines(self) -> UnionDefineService:
-        service = getattr(self, "_union_service", None)
+        service: UnionDefineService | None = getattr(self, "_union_service", None)
         if service is None:
             from bqyx_api.archive.paths import resource_dir
 
             service = UnionDefineService(resource_dir())
             self._union_service = service
-        return service
-
-    def player_bonus(self) -> Any:
-        service = getattr(self, "_player_bonus_service", None)
-        if service is None:
-            from bqyx_api.archive.player.service import PlayerBonusService
-
-            service = PlayerBonusService()
-            self._player_bonus_service = service
         return service
