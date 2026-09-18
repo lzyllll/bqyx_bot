@@ -35,6 +35,7 @@ class ReplyService:
             "我的绑定          查看当前绑定\n"
             "我的信息          查看个人信息\n"
             "我的贡献          查看个人贡献任务\n"
+            "我的战力 [@用户]  查看角色战力面板与加成汇总\n"
             "查物品 [@用户]    查看本人或指定用户背包，有变动时附带对比图\n"
             "免at添加 @用户    添加到免at名单\n"
             "免at删除 @用户    从免at名单移除\n"
@@ -212,6 +213,42 @@ class ReplyService:
         fc.attach_image(self._b64_image(inventory_png))
         if diff_png:
             fc.attach_image(self._b64_image(diff_png))
+        return fc.build()
+
+    async def send_role_dps_report(
+        self,
+        event: GroupMessageEvent,
+        panel_png: bytes,
+        bonus_prop_png: bytes,
+        bonus_mod_png: bytes,
+        *,
+        title: str = "角色战力与加成汇总",
+    ) -> None:
+        """一条合并转发消息：角色面板图、按属性加成汇总图、按模块加成汇总图。"""
+        fc = self.build_role_dps_forward(
+            event,
+            panel_png,
+            bonus_prop_png,
+            bonus_mod_png,
+            title=title,
+        )
+        await self.api.qq.post_group_forward_msg(event.group_id, fc)
+
+    def build_role_dps_forward(
+        self,
+        event: GroupMessageEvent,
+        panel_png: bytes,
+        bonus_prop_png: bytes,
+        bonus_mod_png: bytes,
+        *,
+        title: str = "角色战力与加成汇总",
+    ) -> Any:
+        bot_id = str(getattr(event, "self_id", self.bot_id) or self.bot_id)
+        fc = ForwardConstructor(user_id=bot_id, nickname="Bot")
+        fc.attach_text(f"🎮 【{title}】")
+        fc.attach_image(self._b64_image(panel_png))
+        fc.attach_image(self._b64_image(bonus_prop_png))
+        fc.attach_image(self._b64_image(bonus_mod_png))
         return fc.build()
 
     @staticmethod

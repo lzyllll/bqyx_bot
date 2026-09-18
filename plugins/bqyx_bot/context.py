@@ -24,6 +24,7 @@ class BqyxServices:
     things: MyThingsService
     api: Any
     _union_service: UnionDefineService | None
+    _player_bonus_service: Any = None
 
     async def require_army(self, group_id: str) -> tuple[GameUser, int]:
         army_id = await self.store.get_group_army(group_id)
@@ -42,4 +43,13 @@ class BqyxServices:
 
             service = UnionDefineService(resource_dir())
             self._union_service = service
+        return service
+
+    def player_bonus(self) -> Any:
+        service = getattr(self, "_player_bonus_service", None)
+        if service is None:
+            from bqyx_api.archive.player.service import PlayerBonusService
+
+            service = PlayerBonusService()
+            self._player_bonus_service = service
         return service

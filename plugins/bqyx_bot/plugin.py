@@ -76,5 +76,10 @@ class BqyxBotPlugin(
         self.logger.info("%s 已加载", self.name)
 
     async def on_close(self) -> None:
+        if getattr(self, "_player_bonus_service", None) is not None:
+            try:
+                self._player_bonus_service.close()
+            except Exception:
+                pass
         await self.store.close()
         self.logger.info("%s 已卸载", self.name)

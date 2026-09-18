@@ -6,12 +6,84 @@ from bqyx_api.archive import DemonWeekService
 
 from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
-from ..hooks import command_rate_limit, error_reply
+from ..hooks import command_rate_limit, error_reply, my_dps_limit
 from ..models import ContributionKind
 from ..parsing import parse_format, parse_format_and_limit
 
 
 class QueryHandlers(BqyxServices):
+    @error_reply
+    @my_dps_limit
+    @registrar.on_group_command("我的战力", "战力", "查战力")
+    async def check_my_dps(
+        self,
+        event: GroupMessageEvent,
+        target: At | None = None,
+    ) -> None:
+        """查询角色战力面板与加成汇总（合并转发嵌套卡片）。"""
+        group_id = str(event.group_id)
+        qq_id = str(target.user_id if target else event.user_id)
+        bind = await self.store.get_user_bind(group_id, qq_id)
+        if bind is None:
+            if target is None:
+                raise UserNotBoundError()
+            raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
+
+        user = await self.account.get_user()
+        account = await user.get_account(bind.uid, bind.arch_index)
+
+        # 获取军队与成员实时数据（若群已绑定军队且包含该成员，可计算军队军衔与争霸加成）
+        army_id = await self.store.get_group_army(group_id)
+        union_info = None
+        member_info = None
+        member_list = None
+        if army_id is not None:
+            try:
+                union_info = await user.get_union_info(army_id)
+                raw_members = await user.get_members(army_id)
+                member_list = list(raw_members)
+                for m in member_list:
+                    if str(m.uid) == str(bind.uid):
+                        member_info = m
+                        break
+            except Exception:
+                pass
+
+        service = self.player_bonus()
+        view = service.get_role_panel(
+            account,
+            union_info=union_info,
+            member_info=member_info,
+            member_list=member_list,
+        )
+        summary = service.calculate(
+            account,
+            uid=bind.uid,
+            archive_index=bind.arch_index,
+            union_info=union_info,
+            member_info=member_info,
+            member_list=member_list,
+        )
+
+        from bqyx_api.archive.player.render import (
+            render_role_bonus_image_async,
+            render_role_panel_image_async,
+        )
+
+        panel_png = await render_role_panel_image_async(view)
+        bonus_prop_png = await render_role_bonus_image_async(summary, mode="property")
+        bonus_mod_png = await render_role_bonus_image_async(summary, mode="module")
+
+        player_name = view.player_name or getattr(account, "title", "") or bind.uid
+        title = f"{player_name} 的战力"
+        await self.replies.send_role_dps_report(
+            event,
+            panel_png,
+            bonus_prop_png,
+            bonus_mod_png,
+            title=title,
+        )
+
     @error_reply
     @command_rate_limit(name="查修罗")
     @registrar.on_group_command("查修罗")
