@@ -53,13 +53,7 @@ class QueryHandlers(BqyxServices):
                 pass
 
         service = self.player_bonus
-        view = service.get_role_panel(
-            account,
-            union_info=union_info,
-            member_info=member_info,
-            member_list=member_list,
-        )
-        summary = service.calculate(
+        view, summary = service.get_role_panel_and_bonus(
             account,
             uid=bind.uid,
             archive_index=bind.arch_index,

@@ -102,8 +102,7 @@ async def test_check_my_dps_success_flow():
     mock_summary = SimpleNamespace()
 
     player_bonus_mock = MagicMock()
-    player_bonus_mock.get_role_panel.return_value = mock_panel_view
-    player_bonus_mock.calculate.return_value = mock_summary
+    player_bonus_mock.get_role_panel_and_bonus.return_value = (mock_panel_view, mock_summary)
 
     reply_mock = AsyncMock()
 
@@ -121,8 +120,7 @@ async def test_check_my_dps_success_flow():
     ):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event)
 
-    player_bonus_mock.get_role_panel.assert_called_once()
-    player_bonus_mock.calculate.assert_called_once()
+    player_bonus_mock.get_role_panel_and_bonus.assert_called_once()
     reply_mock.send_role_dps_report.assert_awaited_once_with(
         event,
         b"panel_png",
