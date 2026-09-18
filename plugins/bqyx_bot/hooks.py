@@ -261,7 +261,7 @@ total_union_limit = command_rate_limit(name="实时军队排行")
 this_week_union_limit = command_rate_limit(name="本周周贡排行")
 last_week_union_limit = command_rate_limit(name="上周周贡排行")
 my_dps_limit = command_rate_limit(
-    max_calls=1,
-    period=30,
+    max_calls=3,
+    period=60,
     name="我的战力",
 )
