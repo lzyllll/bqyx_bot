@@ -4,6 +4,7 @@ import asyncio
 from bqyx_api.archive.paths import archive_store_dir, icon_dir, resource_dir
 from bqyx_api.archive.player.service import PlayerBonusService
 from bqyx_api.archive.things import MyThingsService
+from bqyx_api.archive.union import UnionDefineService
 from ncatbot.plugin import NcatBotPlugin
 from .account import AccountService
 from .config import Settings, load_settings
@@ -35,6 +36,7 @@ class BqyxBotPlugin(
     replies: ReplyService
     things: MyThingsService
     player_bonus: PlayerBonusService
+    union_defines: UnionDefineService
     name = "bqyx_bot"
     version = "1.0.0"
     author = "lzy"
@@ -53,6 +55,7 @@ class BqyxBotPlugin(
         # 资源/图标/快照目录均从 .env 读取（BQYX_RESOURCE_DIR/BQYX_ASSETS_DIR/BQYX_ARCHIVE_STORE）
         self.things = MyThingsService(resource_dir(), icon_dir(), archive_store_dir())
         self.player_bonus = PlayerBonusService()
+        self.union_defines = UnionDefineService(resource_dir())
         await self.account.warmup()
         self._nightly_lock = asyncio.Lock()
         # 这里不仅仅是采集，采集后还会清理过期快照，避免占用过多空间

@@ -24,8 +24,8 @@ class BqyxServices:
     replies: ReplyService
     things: MyThingsService
     player_bonus: PlayerBonusService
+    union_defines: UnionDefineService
     api: Any
-    _union_service: UnionDefineService | None = None
 
     async def require_army(self, group_id: str) -> tuple[GameUser, int]:
         army_id = await self.store.get_group_army(group_id)
@@ -36,12 +36,3 @@ class BqyxServices:
 
     async def optional_bind(self, group_id: str, qq_id: str) -> UserBind | None:
         return await self.store.get_user_bind(str(group_id), str(qq_id))
-
-    def union_defines(self) -> UnionDefineService:
-        service: UnionDefineService | None = getattr(self, "_union_service", None)
-        if service is None:
-            from bqyx_api.archive.paths import resource_dir
-
-            service = UnionDefineService(resource_dir())
-            self._union_service = service
-        return service

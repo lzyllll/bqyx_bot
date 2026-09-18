@@ -146,7 +146,7 @@ class BindHandlers(BqyxServices):
         format_type = parse_format(event.message.text, "图片")
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
-        union_data = parse_union_save(account, self.union_defines())
+        union_data = parse_union_save(account, self.union_defines)
 
         title = "我的贡献"
         army_id = await self.store.get_group_army(str(event.group_id))
