@@ -26,15 +26,26 @@ class FakeEvent:
 def test_build_role_dps_forward(tmp_path):
     replies = ReplyService(api=None, workspace=tmp_path, bot_id="99999")
     event = FakeEvent()
-    forward = replies.build_role_dps_forward(
+    # 无 arms_png: 1 text + 3 images = 4
+    forward_without_arms = replies.build_role_dps_forward(
         event,
         panel_png=b"panel-bytes",
         bonus_prop_png=b"prop-bytes",
         bonus_mod_png=b"mod-bytes",
         title="玩家A 的战力",
     )
-    # 1 title text node + 3 image nodes = 4 nodes
-    assert len(forward.content) == 4
+    assert len(forward_without_arms.content) == 4
+
+    # 有 arms_png: 1 text + 4 images = 5
+    forward_with_arms = replies.build_role_dps_forward(
+        event,
+        panel_png=b"panel-bytes",
+        bonus_prop_png=b"prop-bytes",
+        bonus_mod_png=b"mod-bytes",
+        arms_png=b"arms-bytes",
+        title="玩家A 的战力",
+    )
+    assert len(forward_with_arms.content) == 5
 
 
 @pytest.mark.asyncio
@@ -117,6 +128,7 @@ async def test_check_my_dps_success_flow():
     with (
         patch("bqyx_bot.handlers.query.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
         patch("bqyx_bot.handlers.query.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
+        patch("bqyx_bot.handlers.query.render_role_arms_image_async", new=AsyncMock(return_value=b"arms_png")),
     ):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event)
 
@@ -126,6 +138,7 @@ async def test_check_my_dps_success_flow():
         b"panel_png",
         b"prop_png",
         b"mod_png",
+        arms_png=b"arms_png",
         title="大罗金仙 的战力",
     )
 
@@ -165,6 +178,7 @@ async def test_check_other_user_dps_flow():
     with (
         patch("bqyx_bot.handlers.query.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
         patch("bqyx_bot.handlers.query.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
+        patch("bqyx_bot.handlers.query.render_role_arms_image_async", new=AsyncMock(return_value=b"arms_png")),
     ):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event, target=target)
 
@@ -186,6 +200,7 @@ async def test_check_other_user_dps_flow():
         b"panel_png",
         b"prop_png",
         b"mod_png",
+        arms_png=b"arms_png",
         title="道友乙 的战力",
     )
 

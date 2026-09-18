@@ -221,15 +221,17 @@ class ReplyService:
         panel_png: bytes,
         bonus_prop_png: bytes,
         bonus_mod_png: bytes,
+        arms_png: bytes | None = None,
         *,
         title: str = "角色战力与加成汇总",
     ) -> None:
-        """一条合并转发消息：角色面板图、按属性加成汇总图、按模块加成汇总图。"""
+        """一条合并转发消息：角色面板图、按属性加成汇总图、按模块加成汇总图、武器数据图。"""
         fc = self.build_role_dps_forward(
             event,
             panel_png,
             bonus_prop_png,
             bonus_mod_png,
+            arms_png=arms_png,
             title=title,
         )
         await self.api.qq.post_group_forward_msg(event.group_id, fc)
@@ -240,15 +242,18 @@ class ReplyService:
         panel_png: bytes,
         bonus_prop_png: bytes,
         bonus_mod_png: bytes,
+        arms_png: bytes | None = None,
         *,
         title: str = "角色战力与加成汇总",
     ) -> Any:
-        bot_id = str(getattr(event, "self_id", self.bot_id) or self.bot_id)
+        bot_id = str(event.self_id if hasattr(event, "self_id") and event.self_id else self.bot_id)
         fc = ForwardConstructor(user_id=bot_id, nickname="Bot")
         fc.attach_text(f"🎮 【{title}】")
         fc.attach_image(self._b64_image(panel_png))
         fc.attach_image(self._b64_image(bonus_prop_png))
         fc.attach_image(self._b64_image(bonus_mod_png))
+        if arms_png is not None:
+            fc.attach_image(self._b64_image(arms_png))
         return fc.build()
 
     @staticmethod

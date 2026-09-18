@@ -10,6 +10,7 @@ from ..hooks import command_rate_limit, error_reply, my_dps_limit
 from ..models import ContributionKind
 from ..parsing import parse_format, parse_format_and_limit
 from bqyx_api.archive.player.render import (
+    render_role_arms_image_async,
     render_role_bonus_image_async,
     render_role_panel_image_async,
 )
@@ -76,6 +77,7 @@ class QueryHandlers(BqyxServices):
         panel_png = await render_role_panel_image_async(view)
         bonus_prop_png = await render_role_bonus_image_async(summary, mode="property")
         bonus_mod_png = await render_role_bonus_image_async(summary, mode="module")
+        arms_png = await render_role_arms_image_async(view)
 
         player_name = view.player_name or account.title or bind.uid
         title = f"{player_name} 的战力"
@@ -84,6 +86,7 @@ class QueryHandlers(BqyxServices):
             panel_png,
             bonus_prop_png,
             bonus_mod_png,
+            arms_png=arms_png,
             title=title,
         )
 
