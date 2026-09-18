@@ -1,3 +1,5 @@
+import re
+
 from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent
 from ncatbot.types import At, MessageArray
@@ -23,12 +25,23 @@ class QueryHandlers(BqyxServices):
     ) -> None:
         """查询角色战力面板与加成汇总（合并转发嵌套卡片）。"""
         group_id = str(event.group_id)
-        qq_id = str(target.user_id if target else event.user_id)
+
+        # 获取目标 QQ（若通过 @ 则使用被 @ 用户的 QQ，否则使用发送者 QQ）
+        target_at = target
+        if target_at is None and hasattr(event, "message") and event.message:
+            for seg in event.message:
+                if isinstance(seg, At):
+                    target_at = seg
+                    break
+
+        is_other = target_at is not None
+        qq_id = str(target_at.user_id if target_at else event.user_id)
+
         bind = await self.store.get_user_bind(group_id, qq_id)
         if bind is None:
-            if target is None:
-                raise UserNotBoundError()
-            raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
+            if is_other:
+                raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
+            raise UserNotBoundError()
 
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
@@ -64,7 +77,7 @@ class QueryHandlers(BqyxServices):
         bonus_prop_png = await render_role_bonus_image_async(summary, mode="property")
         bonus_mod_png = await render_role_bonus_image_async(summary, mode="module")
 
-        player_name = view.player_name or getattr(account, "title", "") or bind.uid
+        player_name = view.player_name or account.title or bind.uid
         title = f"{player_name} 的战力"
         await self.replies.send_role_dps_report(
             event,

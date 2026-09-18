@@ -129,3 +129,64 @@ async def test_check_my_dps_success_flow():
         title="大罗金仙 的战力",
     )
 
+
+@pytest.mark.asyncio
+async def test_check_other_user_dps_flow():
+    """查战力 @xxx：使用被 @ 用户的 uid 和 arch_index 进行查询。"""
+    bind = UserBind(group_id="20002", qq_id="88888", uid="88888888", arch_index=2)
+    store = AsyncMock()
+    store.get_user_bind.return_value = bind
+    store.get_group_army.return_value = None
+
+    mock_account_data = SimpleNamespace(title="道友乙")
+    mock_game_user = AsyncMock()
+    mock_game_user.get_account.return_value = mock_account_data
+
+    account_service = AsyncMock()
+    account_service.get_user.return_value = mock_game_user
+
+    mock_panel_view = SimpleNamespace(player_name="道友乙")
+    mock_summary = SimpleNamespace()
+
+    player_bonus_mock = MagicMock()
+    player_bonus_mock.get_role_panel_and_bonus.return_value = (mock_panel_view, mock_summary)
+
+    reply_mock = AsyncMock()
+
+    handlers = QueryHandlers()
+    handlers.store = store
+    handlers.account = account_service
+    handlers.replies = reply_mock
+    handlers.player_bonus = player_bonus_mock
+
+    event = FakeEvent(user_id="10001", group_id="20002")
+    target = SimpleNamespace(user_id="88888")
+
+    with (
+        patch("bqyx_bot.handlers.query.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
+        patch("bqyx_bot.handlers.query.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
+    ):
+        await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event, target=target)
+
+    # 确认是用目标用户的 QQ 查询绑定
+    store.get_user_bind.assert_awaited_once_with("20002", "88888")
+    # 确认是用目标用户的 uid 和 arch_index 获取游戏账号
+    mock_game_user.get_account.assert_awaited_once_with("88888888", 2)
+    # 确认角色面板与加成计算使用的是目标用户的 uid 与 arch_index
+    player_bonus_mock.get_role_panel_and_bonus.assert_called_once_with(
+        mock_account_data,
+        uid="88888888",
+        archive_index=2,
+        union_info=None,
+        member_info=None,
+        member_list=None,
+    )
+    reply_mock.send_role_dps_report.assert_awaited_once_with(
+        event,
+        b"panel_png",
+        b"prop_png",
+        b"mod_png",
+        title="道友乙 的战力",
+    )
+
+
