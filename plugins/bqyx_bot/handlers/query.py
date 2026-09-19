@@ -65,7 +65,7 @@ class QueryHandlers(BqyxServices):
                 pass
 
         service = self.player_bonus
-        view, summary = service.get_role_panel_and_bonus(
+        view, summary = await service.get_role_panel_and_bonus_async(
             account,
             uid=bind.uid,
             archive_index=bind.arch_index,
