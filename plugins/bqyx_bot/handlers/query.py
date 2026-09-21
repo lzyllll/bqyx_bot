@@ -112,7 +112,7 @@ class QueryHandlers(BqyxServices):
             raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
-        result = self.demon_week.parse_archive(account)
+        result = self.demon_week.parse_archive(account.data)
 
         title =  f"{account.title} 的修罗地图"
         await self.replies.send_demon(event, result, format_type, title=title)
