@@ -50,8 +50,11 @@ def test_build_role_dps_forward(tmp_path):
 
 @pytest.mark.asyncio
 async def test_my_dps_rate_limit(monkeypatch):
-    """我的战力：每群 30 秒 1 次。"""
+    """我的战力限流：每群限制与独立窗口。"""
+    from bqyx_bot.hooks import GroupRateLimiter
+
     total_call_limit.reset()
+    limiter = GroupRateLimiter(max_calls=1, period=30, name="测试战力")
     monkeypatch.setattr("bqyx_bot.hooks.time.monotonic", lambda: 100.0)
 
     first_event = FakeEvent(group_id="group_1")
@@ -59,7 +62,7 @@ async def test_my_dps_rate_limit(monkeypatch):
 
     called = []
 
-    @my_dps_limit
+    @limiter
     async def handler(self, event):
         called.append(event.group_id)
         return "ok"
@@ -114,6 +117,7 @@ async def test_check_my_dps_success_flow():
 
     player_bonus_mock = MagicMock()
     player_bonus_mock.get_role_panel_and_bonus.return_value = (mock_panel_view, mock_summary)
+    player_bonus_mock.get_role_panel_and_bonus_async = AsyncMock(return_value=(mock_panel_view, mock_summary))
 
     reply_mock = AsyncMock()
 
@@ -132,7 +136,7 @@ async def test_check_my_dps_success_flow():
     ):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event)
 
-    player_bonus_mock.get_role_panel_and_bonus.assert_called_once()
+    player_bonus_mock.get_role_panel_and_bonus_async.assert_awaited_once()
     reply_mock.send_role_dps_report.assert_awaited_once_with(
         event,
         b"panel_png",
@@ -163,6 +167,7 @@ async def test_check_other_user_dps_flow():
 
     player_bonus_mock = MagicMock()
     player_bonus_mock.get_role_panel_and_bonus.return_value = (mock_panel_view, mock_summary)
+    player_bonus_mock.get_role_panel_and_bonus_async = AsyncMock(return_value=(mock_panel_view, mock_summary))
 
     reply_mock = AsyncMock()
 
@@ -187,7 +192,7 @@ async def test_check_other_user_dps_flow():
     # 确认是用目标用户的 uid 和 arch_index 获取游戏账号
     mock_game_user.get_account.assert_awaited_once_with("88888888", 2)
     # 确认角色面板与加成计算使用的是目标用户的 uid 与 arch_index
-    player_bonus_mock.get_role_panel_and_bonus.assert_called_once_with(
+    player_bonus_mock.get_role_panel_and_bonus_async.assert_awaited_once_with(
         mock_account_data,
         uid="88888888",
         archive_index=2,
