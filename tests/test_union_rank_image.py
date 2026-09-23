@@ -10,7 +10,7 @@ from dataclasses import replace
 
 from bqyx_bot.handlers.union_rank import apply_weekly_contribution, _rank_rows
 from bqyx_bot.models import UnionSnapshot
-from bqyx_bot.union_rank_render import UnionRankRenderer
+from bqyx_bot.render.union_rank_render import UnionRankRenderer
 
 OUTPUT_DIR = Path(__file__).parent / "output"
 

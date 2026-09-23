@@ -214,7 +214,7 @@ def test_weekly_rank_window_centers_on_bound_army():
 
 
 def test_renderer_score_label_weekly():
-    from bqyx_bot.union_rank_render import UnionRankRenderer
+    from bqyx_bot.render.union_rank_render import UnionRankRenderer
 
     html = UnionRankRenderer().html(
         title="本周周贡排行（实时）",

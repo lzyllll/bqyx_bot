@@ -30,7 +30,7 @@ from ..schedule import (
     report_date,
     this_week_label,
 )
-from ..union_rank_render import UnionRankRenderer
+from ..render.union_rank_render import UnionRankRenderer
 from .schedule import UNION_RANK_LIMIT, fetch_union_rank
 
 # 默认以本军排行为中心，前后各取 6 名；可指定范围，但窗口上限 20

@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --bg: #f6f8fa;
+      --card-bg: #ffffff;
+      --border: #d0d7de;
+      --text-main: #1f2328;
+      --text-muted: #656d76;
+      --color-empty: #ebedf0;
+      --color-none: #ffffff;
+      --color-zero: #f85149;
+      --color-zero-border: #da3633;
+      --color-level-1: #9be9a8;
+      --color-level-1-border: #7bc96f;
+      --color-level-2: #40c463;
+      --color-level-2-border: #34a853;
+      --color-level-3: #30a14e;
+      --color-level-3-border: #238636;
+      --color-level-4: #216e39;
+      --color-level-4-border: #196127;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(140, 149, 159, 0.15);
+      width: 530px;
+    }
+
+    /* 头部 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .title-area h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .month-badge {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0969da;
+      background: #ddf4ff;
+      border: 1px solid #54aeff66;
+      padding: 4px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    /* 统计信息栏 */
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: #f6f8fa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+      font-family: 'Segoe UI', monospace;
+    }
+
+    .stat-value.highlight {
+      color: #1a7f37;
+    }
+
+    /* 贡献墙主体 */
+    .wall-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .week-headers {
+      display: flex;
+      margin-left: 48px;
+      gap: 10px;
+    }
+
+    .week-header {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .grid-container {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      width: 100%;
+    }
+
+    .weekday-labels {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 38px;
+      flex-shrink: 0;
+    }
+
+    .weekday-label {
+      height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .weeks-columns {
+      display: flex;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .week-column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+
+    /* 单元格 */
+    .cell {
+      width: 100%;
+      height: 62px;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 6px 8px;
+      position: relative;
+      transition: all 0.15s ease;
+    }
+
+    .cell-empty {
+      visibility: hidden;
+    }
+
+    .cell-none {
+      background: var(--color-none);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .cell-zero {
+      background: var(--color-zero);
+      border: 1px solid var(--color-zero-border);
+      color: #ffffff;
+    }
+
+    .cell-level-1 {
+      background: var(--color-level-1);
+      border: 1px solid var(--color-level-1-border);
+      color: #1b1f24;
+    }
+
+    .cell-level-2 {
+      background: var(--color-level-2);
+      border: 1px solid var(--color-level-2-border);
+      color: #ffffff;
+    }
+
+    .cell-level-3 {
+      background: var(--color-level-3);
+      border: 1px solid var(--color-level-3-border);
+      color: #ffffff;
+    }
+
+    .cell-level-4 {
+      background: var(--color-level-4);
+      border: 1px solid var(--color-level-4-border);
+      color: #ffffff;
+    }
+
+    .cell .day-num {
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0.9;
+      line-height: 1;
+    }
+
+    .cell .con-val {
+      font-size: 14px;
+      font-weight: 800;
+      font-family: 'Segoe UI', monospace;
+      text-align: right;
+      line-height: 1;
+    }
+
+    /* 图例区域 */
+    .legend-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .legend-items {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .legend-box {
+      width: 13px;
+      height: 13px;
+      border-radius: 3px;
+    }
+
+    .footer-time {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <!-- 头部信息 -->
+    <div class="header">
+      <div class="title-area">
+        <h1>{{ title }}</h1>
+      </div>
+      <div class="month-badge">{{ month_label }}</div>
+    </div>
+
+    <!-- 统计信息 -->
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-label">本月累计日贡</div>
+        <div class="stat-value highlight">{{ total_contribution }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">满贡天数 (≥1400)</div>
+        <div class="stat-value">{{ perfect_days }} 天</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">日均贡献 (有记录)</div>
+        <div class="stat-value">{{ avg_contribution }}</div>
+      </div>
+    </div>
+
+    <!-- 贡献网格 -->
+    <div class="wall-wrapper">
+      <!-- 顶部周表头 -->
+      <div class="week-headers">
+        {% for week in weeks %}
+        <div class="week-header">{{ week.label }}</div>
+        {% endfor %}
+      </div>
+
+      <!-- 主体网格：左侧周一~周日标签，右侧每周一列 -->
+      <div class="grid-container">
+        <div class="weekday-labels">
+          {% for label in weekday_labels %}
+          <div class="weekday-label">{{ label }}</div>
+          {% endfor %}
+        </div>
+
+        <div class="weeks-columns">
+          {% for week in weeks %}
+          <div class="week-column">
+            {% for day in week.days %}
+            {% if day.in_month %}
+            <div class="cell cell-{{ day.level }}" title="{{ day.date_str }}: {{ day.con_text }}">
+              <span class="day-num">{{ day.day_num }}</span>
+              <span class="con-val">{{ day.display_val }}</span>
+            </div>
+            {% else %}
+            <div class="cell cell-empty"></div>
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- 图例与时间 -->
+    <div class="legend-bar">
+      <div class="legend-items">
+        <span>图例:</span>
+        <div class="legend-item">
+          <div class="legend-box" style="background: var(--color-none); border: 1px solid var(--border);"></div>
+          <span>无记录</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box" style="background: var(--color-zero); border: 1px solid var(--color-zero-border);">
+          </div>
+          <span>0贡</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box"
+            style="background: var(--color-level-1); border: 1px solid var(--color-level-1-border);"></div>
+          <span>≤600</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box"
+            style="background: var(--color-level-2); border: 1px solid var(--color-level-2-border);"></div>
+          <span>≤1310</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box"
+            style="background: var(--color-level-3); border: 1px solid var(--color-level-3-border);"></div>
+          <span>≤1400</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-box"
+            style="background: var(--color-level-4); border: 1px solid var(--color-level-4-border);"></div>
+          <span>>1400</span>
+        </div>
+      </div>
+
+      {% if captured_at %}
+      <div class="footer-time">更新于 {{ captured_at }}</div>
+      {% endif %}
+    </div>
+
+  </div>
+
+</body>
+
+</html>

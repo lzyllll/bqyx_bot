@@ -6,15 +6,16 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-TEMPLATE_DIR = Path(__file__).parent / "templates"
+TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 
 class UnionRankRenderer:
     """把军队排行数据渲染成 HTML，再用 bqyx_api 的截图工具转成 PNG。"""
 
     def __init__(self, template_dir: Path | None = None) -> None:
+        self.template_dir = Path(template_dir or TEMPLATE_DIR)
         self.env = Environment(
-            loader=FileSystemLoader(str(template_dir or TEMPLATE_DIR)),
+            loader=FileSystemLoader(str(self.template_dir)),
             autoescape=select_autoescape(["html", "j2"]),
         )
 

@@ -31,7 +31,7 @@ def _months_ago(value: date, months: int) -> date:
 
 
 class SqliteStore:
-    def __init__(self, path: Path, retention_days: int = 3, union_retention_days: int | None = None) -> None:
+    def __init__(self, path: Path, retention_days: int = 63, union_retention_days: int | None = None) -> None:
         self.path = Path(path)
         self.retention_days = retention_days
         self.union_retention_days = retention_days if union_retention_days is None else union_retention_days
@@ -255,6 +255,38 @@ class SqliteStore:
             """,
             (int(army_id), str(snapshot_date)),
         )
+        return [self._row_to_snapshot(row) for row in rows]
+
+    async def list_member_snapshots_for_month(
+        self,
+        uid: str,
+        year: int,
+        month: int,
+        army_id: int | None = None,
+    ) -> list[MemberSnapshot]:
+        """查询某成员在指定年月的每日快照记录（按日期升序）。"""
+        last_day = calendar.monthrange(year, month)[1]
+        start_date = f"{year:04d}-{month:02d}-01"
+        end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
+        if army_id is not None:
+            query = """
+            SELECT army_id, snapshot_date, uid, arch_index,
+                   nickname, contribution, con_day, this_week, captured_at
+            FROM member_snapshot
+            WHERE army_id = ? AND uid = ? AND snapshot_date >= ? AND snapshot_date <= ?
+            ORDER BY snapshot_date ASC
+            """
+            params = (int(army_id), str(uid), start_date, end_date)
+        else:
+            query = """
+            SELECT army_id, snapshot_date, uid, arch_index,
+                   nickname, contribution, con_day, this_week, captured_at
+            FROM member_snapshot
+            WHERE uid = ? AND snapshot_date >= ? AND snapshot_date <= ?
+            ORDER BY snapshot_date ASC
+            """
+            params = (str(uid), start_date, end_date)
+        rows = await self._run(self._fetchall, query, params)
         return [self._row_to_snapshot(row) for row in rows]
 
     async def replace_union_snapshots(

@@ -14,7 +14,7 @@ class Settings:
     username: str
     password: str
     arch_index: int
-    snapshot_retention_days: int = 3
+    snapshot_retention_days: int = 63
     union_snapshot_retention_days: int = 15
 
 
@@ -44,7 +44,7 @@ def load_settings() -> Settings:
         username=username,
         password=password,
         arch_index=arch_index,
-        snapshot_retention_days=_positive_int_env("BQYX_SNAPSHOT_RETENTION_DAYS", "3"),
+        snapshot_retention_days=_positive_int_env("BQYX_SNAPSHOT_RETENTION_DAYS", "63"),
         union_snapshot_retention_days=_positive_int_env(
             "BQYX_UNION_SNAPSHOT_RETENTION_DAYS",
             "15",
