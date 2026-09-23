@@ -8,7 +8,14 @@ from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
 from ..hooks import command_rate_limit, error_reply, my_dps_limit
 from ..models import ContributionKind
-from ..parsing import parse_format, parse_format_and_limit
+from ..parsing import (
+    extract_at,
+    parse_format,
+    parse_format_and_limit,
+    parse_year_month,
+)
+from ..render import MyContributionRenderer
+from ..schedule import as_shanghai
 from bqyx_api.archive.player.render import (
     render_role_arms_image_async,
     render_role_bonus_image_async,
@@ -26,15 +33,7 @@ class QueryHandlers(BqyxServices):
     ) -> None:
         """查询角色战力面板与加成汇总（合并转发嵌套卡片）。"""
         group_id = str(event.group_id)
-
-        # 获取目标 QQ（若通过 @ 则使用被 @ 用户的 QQ，否则使用发送者 QQ）
-        target_at = target
-        if target_at is None and hasattr(event, "message") and event.message:
-            for seg in event.message:
-                if isinstance(seg, At):
-                    target_at = seg
-                    break
-
+        target_at = extract_at(event, target)
         is_other = target_at is not None
         qq_id = str(target_at.user_id if target_at else event.user_id)
 
@@ -89,6 +88,90 @@ class QueryHandlers(BqyxServices):
             arms_png=arms_png,
             title=title,
         )
+
+    @error_reply
+    @command_rate_limit(name="我的贡献")
+    @registrar.on_group_command("我的贡献", "贡献墙", "我的日贡")
+    async def check_my_contribution_wall(
+        self,
+        event: GroupMessageEvent,
+        target: At | None = None,
+    ) -> None:
+        """查询本月每日日贡 GitHub 贡献墙。支持 @用户 以及指定月份（如 2026-09 或 上月）。"""
+        group_id = str(event.group_id)
+        target_at = extract_at(event, target)
+        is_other = target_at is not None
+        qq_id = str(target_at.user_id if target_at else event.user_id)
+
+        bind = await self.store.get_user_bind(group_id, qq_id)
+        if bind is None:
+            if is_other:
+                raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
+            raise UserNotBoundError()
+
+        # 解析查询月份（默认当月；支持 2026-09、2026/09、202609、上月 等）
+        raw_text = getattr(getattr(event, "message", None), "text", "") or ""
+        now = as_shanghai()
+        year, month = parse_year_month(raw_text, default_now=now)
+
+        if not (1 <= month <= 12 and 2000 <= year <= 2100):
+            raise BotError("月份格式无效，示例：我的贡献 或 我的贡献 2026-09")
+
+        user, army_id = await self.require_army(group_id)
+
+        # 查询当月历史快照
+        snapshots = await self.store.list_member_snapshots_for_month(
+            uid=bind.uid,
+            year=year,
+            month=month,
+            army_id=army_id,
+        )
+        daily_records: dict[str, int | None] = {
+            snap.snapshot_date: snap.con_day for snap in snapshots
+        }
+
+        # 优先从军队成员中获取最新的 detail.playerName
+        player_name = None
+        today = now.date()
+        today_str = today.isoformat()
+        try:
+            raw_members = await user.get_members(army_id)
+            for m in raw_members:
+                if str(m.uid) == str(bind.uid):
+                    if m.detail:
+                        if m.detail.playerName:
+                            player_name = str(m.detail.playerName).strip()
+                        if m.detail.conDay is not None and today.year == year and today.month == month:
+                            daily_records[today_str] = int(m.detail.conDay)
+                    break
+        except Exception:
+            pass
+
+        # 若在线成员列表未找到，从历史快照中的 nickname（即入库时的 detail.playerName）获取
+        if not player_name:
+            for snap in reversed(snapshots):
+                if snap.nickname:
+                    player_name = snap.nickname
+                    break
+
+        # 最后兜底
+        if not player_name:
+            try:
+                account = await user.get_account(bind.uid, bind.arch_index)
+                player_name = account.title or bind.uid
+            except Exception:
+                player_name = bind.uid
+
+        renderer = MyContributionRenderer()
+        html = renderer.html(
+            player_name=player_name,
+            year=year,
+            month=month,
+            daily_records=daily_records,
+            captured_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+        )
+        png = await renderer.to_png(html)
+        await self.replies.send_my_contribution_wall(event, png)
 
     @error_reply
     @command_rate_limit(name="查修罗")

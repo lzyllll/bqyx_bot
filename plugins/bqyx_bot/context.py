@@ -7,6 +7,7 @@ from bqyx_api.archive import DemonWeekService
 from bqyx_api.archive.player.service import PlayerBonusService
 from bqyx_api.archive.things import MyThingsService
 from bqyx_api.archive.union import UnionDefineService
+from ncatbot.api import BotAPIClient
 
 from .account import AccountService
 from .config import Settings
@@ -27,7 +28,7 @@ class BqyxServices:
     player_bonus: PlayerBonusService
     union_defines: UnionDefineService
     demon_week: DemonWeekService
-    api: Any
+    api: "BotAPIClient"
 
     async def require_army(self, group_id: str) -> tuple[GameUser, int]:
         army_id = await self.store.get_group_army(group_id)
@@ -38,3 +39,12 @@ class BqyxServices:
 
     async def optional_bind(self, group_id: str, qq_id: str) -> UserBind | None:
         return await self.store.get_user_bind(str(group_id), str(qq_id))
+
+    async def wait_session_reply(
+        self,
+        event: Any,
+        *,
+        timeout: float | None = None,
+        cancel_words: list[str] | None = None,
+    ) -> Any:
+        raise NotImplementedError

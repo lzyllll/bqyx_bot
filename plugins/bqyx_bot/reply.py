@@ -31,10 +31,11 @@ class ReplyService:
             "绑定军队 <ID>     为本群绑定军队\n"
             "绑定uid <UID>      绑定个人游戏ID，支持 123456 或 123456_1\n"
             "绑定账号 <账号>    用4399账号名绑定\n"
+            "绑定游戏名 <角色名> 按游戏角色名绑定（支持多重名会话选择）\n"
             "一键绑定          自动匹配并绑定\n"
             "我的绑定          查看当前绑定\n"
-            "我的信息          查看个人信息\n"
-            "我的贡献          查看个人贡献任务\n"
+            "我的信息          查看个人信息与任务进度\n"
+            "我的贡献 [@用户] [年月] 查看本月每天日贡GitHub贡献墙\n"
             "我的战力 [@用户]  查看角色战力面板与加成汇总\n"
             "查物品 [@用户]    查看本人或指定用户背包，有变动时附带对比图\n"
             "免at添加 @用户    添加到免at名单\n"
@@ -162,6 +163,13 @@ class ReplyService:
             )
             return
         png = await Renderer.contribution.image(union_data=union_data, title=title)
+        await self._send_image(event, png)
+
+    async def send_my_contribution_wall(
+        self,
+        event: GroupMessageEvent,
+        png: bytes,
+    ) -> None:
         await self._send_image(event, png)
 
     async def send_demon(

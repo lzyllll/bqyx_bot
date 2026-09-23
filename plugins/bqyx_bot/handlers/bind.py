@@ -7,7 +7,12 @@ from ..context import BqyxServices
 from ..errors import BotError, UserNotBoundError
 from ..hooks import auto_bind_limit, command_rate_limit, error_reply, my_info_limit
 from ..models import GameMember, QQMember
-from ..parsing import extract_uid, parse_format
+from ..parsing import (
+    extract_command_arg,
+    extract_uid,
+    parse_choice_index,
+    parse_format,
+)
 
 
 def pick_member_for_uid(members, uid: str):
@@ -29,9 +34,7 @@ class BindHandlers(BqyxServices):
         user = await self.account.get_user()
         union = await user.get_union_info(int(army_id))
         await self.store.set_group_army(str(event.group_id), int(army_id))
-        name = (
-            getattr(union, "nickname", None) or getattr(union, "title", None) or army_id
-        )
+        name = union.nickname or union.title or army_id
         await event.reply(f"本群已成功绑定军队: {name} ({army_id})")
 
     @error_reply
@@ -53,7 +56,7 @@ class BindHandlers(BqyxServices):
     @command_rate_limit(name="绑定账号")
     @registrar.on_group_command("绑定账号", "绑定用户名")
     async def bind_account(self, event: GroupMessageEvent, username: str) -> None:
-        username = (username or "").strip()
+        username = extract_command_arg(username, event, ("绑定账号", "绑定用户名"))
         if not username:
             raise BotError("请输入 4399 账号名：绑定账号 <账号>")
 
@@ -87,7 +90,7 @@ class BindHandlers(BqyxServices):
                 f"账号「{username}」不在本群绑定的军队中，请确认账号或先绑定正确军队。"
             )
 
-        player_name = getattr(getattr(member, "detail", None), "playerName", "") or ""
+        player_name = member.detail.playerName or ""
         await self._save_bind(
             event,
             uid,
@@ -95,6 +98,89 @@ class BindHandlers(BqyxServices):
             extra=f"账号 {username}"
             + (f" / 角色 {player_name}" if player_name else ""),
         )
+
+    @error_reply
+    @command_rate_limit(name="绑定游戏名")
+    @registrar.on_group_command("绑定游戏名", "绑定角色名", "绑定角色")
+    async def bind_game_name(self, event: GroupMessageEvent, name: str = "") -> None:
+        target_name = extract_command_arg(
+            name, event, ("绑定游戏名", "绑定角色名", "绑定角色")
+        )
+        if not target_name:
+            raise BotError("请输入要绑定的游戏角色名，例如：绑定游戏名 张三")
+
+        user, army_id = await self.require_army(str(event.group_id))
+        try:
+            raw_members = await user.get_members(army_id)
+        except Exception as exc:
+            detail = str(exc).strip()
+            raise BotError(
+                f"获取本群军队成员失败：{detail or type(exc).__name__}"
+            ) from exc
+
+        target_lower = target_name.lower()
+        matches = [
+            m
+            for m in raw_members
+            if target_lower in (m.detail.playerName or "").lower()
+        ]
+
+        if not matches:
+            raise BotError(f"未在本群军队中找到包含「{target_name}」的成员。")
+
+        if len(matches) == 1:
+            target_member = matches[0]
+            player_name = target_member.detail.playerName or target_name
+            await self.store.set_user_bind(
+                str(event.group_id),
+                str(event.user_id),
+                str(target_member.uid),
+                int(target_member.index),
+            )
+            await event.reply(f"QQ {event.user_id} 已成功绑定游戏角色：{player_name}")
+            return
+
+        lines = [
+            f"{i}. {m.detail.playerName} (总贡献: {m.contribution:,})"
+            for i, m in enumerate(matches, 1)
+        ]
+
+        prompt_msg = (
+            f"找到多个包含「{target_name}」的游戏角色，请在 30 秒内回复序号进行绑定（回复“取消”退出）：\n"
+            + "\n".join(lines)
+        )
+        await event.reply(prompt_msg)
+
+        result = await self.wait_session_reply(
+            event,
+            timeout=30,
+            cancel_words=["取消", "退出", "q", "Q"],
+        )
+
+        if result.timed_out:
+            await event.reply("等待超时，已退出绑定流程。")
+            return
+        if result.cancelled:
+            await event.reply("已取消绑定。")
+            return
+
+        if result.ok:
+            idx = parse_choice_index(result.text, len(matches))
+            if idx is None:
+                await event.reply(f"输入无效序号「{result.text or ''}」，绑定已取消。")
+                return
+
+            target_member = matches[idx - 1]
+            player_name = target_member.detail.playerName or target_name
+            await self.store.set_user_bind(
+                str(event.group_id),
+                str(event.user_id),
+                str(target_member.uid),
+                int(target_member.index),
+            )
+            await event.reply(f"QQ {event.user_id} 已成功绑定游戏角色：{player_name}")
+        else:
+            await event.reply("未收到有效回复，已退出绑定流程。")
 
     @error_reply
     @command_rate_limit(name="我的绑定")
@@ -158,9 +244,7 @@ class BindHandlers(BqyxServices):
                 lambda m: str(m.uid) == bind.uid
             )
             if members:
-                player_name = (
-                    getattr(getattr(members[0], "detail", None), "playerName", "") or ""
-                )
+                player_name = members[0].detail.playerName or ""
                 if player_name:
                     title = f"{player_name} 的贡献"
 
@@ -177,7 +261,6 @@ class BindHandlers(BqyxServices):
     async def auto_bind_uid(self, event: GroupMessageEvent) -> None:
         group_id = str(event.group_id)
         user, army_id = await self.require_army(group_id)
-
         group_members = await self.api.qq.query.get_group_member_list(int(group_id))
         qq_members = [
             QQMember(
@@ -193,10 +276,7 @@ class BindHandlers(BqyxServices):
         raw_game_members = await user.get_members(army_id)
         game_members = []
         for member in raw_game_members:
-            detail = getattr(member, "detail", None)
-            nickname = getattr(detail, "playerName", None) or getattr(
-                member, "nickname", None
-            )
+            nickname = member.detail.playerName
             if not nickname:
                 continue
             game_members.append(
