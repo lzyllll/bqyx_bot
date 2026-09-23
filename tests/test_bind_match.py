@@ -1,13 +1,6 @@
 import pytest
-from bqyx_bot import bind_match
 from bqyx_bot.bind_match import match_members, score_bind_match
 from bqyx_bot.models import GameMember, QQMember
-
-
-@pytest.fixture(autouse=True)
-def disable_optional_semantic_model(monkeypatch):
-    """默认安装没有 semantic-bind extra 时，应走 LSA 文本匹配。"""
-    monkeypatch.setattr(bind_match, "_get_semantic_model", lambda: None)
 
 
 def test_exact_name_match_binds_uid_and_index():

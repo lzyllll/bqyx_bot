@@ -2,18 +2,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from functools import lru_cache
-from typing import Any
 
-import numpy as np
 from rapidfuzz import fuzz
 from scipy.optimize import linear_sum_assignment
 
 from .models import GameMember, QQMember
 
 AUTO_BIND_THRESHOLD = 0.84
-SEMANTIC_THRESHOLD = 0.85
-SEMANTIC_CANDIDATE_THRESHOLD = 0.70
 
 
 def normalize_bind_name(name: str) -> str:
@@ -27,16 +22,6 @@ def strip_digits(name: str) -> str:
     if not name:
         return ""
     return re.sub(r"\d+", "", name)
-
-
-@lru_cache(maxsize=1)
-def _get_semantic_model() -> Any | None:
-    """返回可选的语义模型；未安装 extra 时降级为文本匹配。"""
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        return None
-    return SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
 
 
 def score_bind_match(qq_name: str, game_name: str) -> tuple[float, str]:
@@ -73,27 +58,6 @@ def score_bind_match(qq_name: str, game_name: str) -> tuple[float, str]:
     return score, "low_similarity"
 
 
-def _semantic_score_matrix(
-    qq_members: list[QQMember], game_members: list[GameMember]
-) -> np.ndarray | None:
-    """批量计算昵称余弦相似度；语义 extra 未安装时返回 ``None``。"""
-    model = _get_semantic_model()
-    if model is None:
-        return None
-
-    names = [member.nickname for member in qq_members] + [
-        member.nickname for member in game_members
-    ]
-    embeddings = model.encode(
-        names,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-    )
-    qq_embeddings = embeddings[: len(qq_members)]
-    game_embeddings = embeddings[len(qq_members) :]
-    return np.clip(game_embeddings @ qq_embeddings.T, -1.0, 1.0)
-
-
 def match_members(
     qq_members: list[QQMember],
     game_members: list[GameMember],
@@ -111,20 +75,7 @@ def match_members(
         lexical_scores.append([score for score, _ in row])
         reasons.append([reason for _, reason in row])
 
-    score_matrix = [row.copy() for row in lexical_scores]
-    semantic_scores = _semantic_score_matrix(qq_candidates, game_candidates)
-    if semantic_scores is not None:
-        for game_idx in range(len(game_candidates)):
-            for qq_idx in range(len(qq_candidates)):
-                lexical_score = lexical_scores[game_idx][qq_idx]
-                semantic_score = float(semantic_scores[game_idx, qq_idx])
-                if (
-                    lexical_score >= SEMANTIC_CANDIDATE_THRESHOLD
-                    and semantic_score >= SEMANTIC_THRESHOLD
-                    and semantic_score > score_matrix[game_idx][qq_idx]
-                ):
-                    score_matrix[game_idx][qq_idx] = semantic_score
-                    reasons[game_idx][qq_idx] = "semantic_similarity"
+    score_matrix = lexical_scores
     cost_matrix = [[1 - score for score in row] for row in score_matrix]
     row_indexes, col_indexes = linear_sum_assignment(cost_matrix)
 
