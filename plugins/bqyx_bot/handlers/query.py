@@ -97,7 +97,7 @@ class QueryHandlers(BqyxServices):
         event: GroupMessageEvent,
         target: At | None = None,
     ) -> None:
-        """查询本月每日日贡 GitHub 贡献墙。支持 @用户 以及指定月份（如 2026-09 或 上月）。"""
+        """查询本月每日日贡贡献日历墙。支持 @用户 以及指定月份（如 2026-09 或 上月）。"""
         group_id = str(event.group_id)
         target_at = extract_at(event, target)
         is_other = target_at is not None

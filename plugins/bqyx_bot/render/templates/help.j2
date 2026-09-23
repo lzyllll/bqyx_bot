@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <style>
+    :root {
+      --bg: #f3f5f8;
+      --card-bg: #ffffff;
+      --border: #e1e4e8;
+      --border-subtle: #eaecef;
+      --text-main: #1f2328;
+      --text-muted: #57606a;
+      --primary: #0969da;
+      --primary-bg: #ddf4ff;
+      --success: #1a7f37;
+      --success-bg: #dafbe1;
+      --accent: #8250df;
+      --accent-bg: #fbefff;
+      --tag-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+      width: 720px;
+    }
+
+    /* 头部 */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 22px;
+      padding-bottom: 18px;
+      border-bottom: 2px solid var(--border-subtle);
+    }
+
+    .title-area h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .title-area h1 .bot-badge {
+      font-size: 12px;
+      font-weight: 700;
+      color: #ffffff;
+      background: linear-gradient(135deg, #0969da, #8250df);
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .title-area p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 5px;
+    }
+
+    .header-tag {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--primary);
+      background: var(--primary-bg);
+      border: 1px solid #54aeff44;
+      padding: 6px 14px;
+      border-radius: 20px;
+    }
+
+    /* 板块区域 */
+    .section-list {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section-card {
+      background: #fafbfc;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* 命令列表 */
+    .cmd-grid {
+      display: flex;
+      flex-direction: column;
+      divide-y: 1px solid var(--border-subtle);
+    }
+
+    .cmd-item {
+      padding: 11px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .cmd-item:last-child {
+      border-bottom: none;
+    }
+
+    .cmd-main {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .cmd-syntax {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #0969da;
+      background: #ffffff;
+      border: 1px solid #d0d7de;
+      padding: 2px 7px;
+      border-radius: 6px;
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    .cmd-syntax.recommended {
+      border-color: #4ac26b88;
+      background: #f6fffa;
+      color: #1a7f37;
+    }
+
+    .cmd-desc {
+      font-size: 13px;
+      color: var(--text-main);
+      flex: 1;
+      text-align: right;
+    }
+
+    .cmd-example {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+
+    .example-tag {
+      font-size: 11px;
+      font-weight: 600;
+      color: #57606a;
+      background: #eaecef;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .example-code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      color: #0550ae;
+    }
+
+    /* 底部提示 */
+    .footer {
+      margin-top: 22px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .tips {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #fff8c5;
+      color: #735c0f;
+      border: 1px solid #e3b34166;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <!-- 头部 -->
+    <div class="header">
+      <div class="title-area">
+        <h1>BQYX Bot 帮助手册 <span class="bot-badge">GUIDE</span></h1>
+        <p>群聊专属辅助机器人 · 常用指令与参数示例大全</p>
+      </div>
+      <div class="header-tag">全功能指南</div>
+    </div>
+
+    <!-- 板块列表 -->
+    <div class="section-list">
+      <!-- 个人绑定与查询 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>👤</span> 个人绑定与查询
+          </div>
+          <div class="section-desc">账号绑定与个人数据看板</div>
+        </div>
+        <div class="cmd-grid">
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax recommended">绑定游戏名 &lt;角色名&gt;</span>
+              <span class="cmd-desc">按角色名绑定（推荐，支持多重名会话选择）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">绑定游戏名 张三</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">绑定uid &lt;UID&gt;</span>
+              <span class="cmd-desc">按数字 UID 绑定（支持 123456 或 123456_1）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">绑定uid 123456</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">绑定账号 &lt;4399账号&gt;</span>
+              <span class="cmd-desc">用 4399 用户名查询并绑定本军角色</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">绑定账号 my_4399_user</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">一键绑定</span>
+              <span class="cmd-desc">全自动比对群名片与军团成员二分图匹配绑定</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">我的绑定</span>
+              <span class="cmd-desc">查看当前群聊中绑定的游戏账号与存档号</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">我的信息</span>
+              <span class="cmd-desc">查看本人今日/本周贡献明细与军团任务进度</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">我的贡献 [@用户] [年月]</span>
+              <span class="cmd-desc">查看当月或指定月份的每日日贡贡献日历墙</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">我的贡献&nbsp;&nbsp;|&nbsp;&nbsp;我的贡献 2026-09&nbsp;&nbsp;|&nbsp;&nbsp;我的贡献 上月</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">我的战力 [@用户]</span>
+              <span class="cmd-desc">查看角色战力面板与加成汇总卡片</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">我的战力&nbsp;&nbsp;|&nbsp;&nbsp;我的战力 @张三</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">查物品 / 我的物品 [@用户]</span>
+              <span class="cmd-desc">查看本人或指定用户背包，有变动时附带对比图</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">查物品&nbsp;&nbsp;|&nbsp;&nbsp;我的物品 @张三</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">免at添加 / 删除 / 列表</span>
+              <span class="cmd-desc">管理群通知免 @ 提醒白名单</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">统计RPM</span>
+              <span class="cmd-desc">查看当前全局每分钟调用频次与系统负荷</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 本群军队查询 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>🛡️</span> 本群军队查询
+          </div>
+          <div class="section-desc">需管理员先绑定军队（群内共享）</div>
+        </div>
+        <div class="cmd-grid">
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">绑定军队 &lt;军队ID&gt;</span>
+              <span class="cmd-desc">为本群绑定指定的军团</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">绑定军队 1234</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">军队信息 [图片|文本]</span>
+              <span class="cmd-desc">查看本群绑定军队的基础概况与资产</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">查成员 [图片|表格|文本]</span>
+              <span class="cmd-desc">查看军团所有成员名单及实时活跃状态</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">查成员&nbsp;&nbsp;|&nbsp;&nbsp;查成员 表格</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">查日贡 [阈值] [图片|表格|文本]</span>
+              <span class="cmd-desc">查看今日日贡达标/未达标成员名单（支持查日贡@）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">查日贡 1100&nbsp;&nbsp;|&nbsp;&nbsp;查日贡@ 1100</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">查周贡 [阈值] [图片|表格|文本]</span>
+              <span class="cmd-desc">查看本周累计周贡达标/未达标成员（支持查周贡@）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">查周贡 4000&nbsp;&nbsp;|&nbsp;&nbsp;查周贡@ 4000</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">昨日贡献 [阈值]</span>
+              <span class="cmd-desc">查看昨日日贡排行图（默认全部，可指定低于阈值）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">昨日贡献&nbsp;&nbsp;|&nbsp;&nbsp;昨日贡献 1100</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">查争霸 / 查PK / 查修罗</span>
+              <span class="cmd-desc">查看军团争霸据点分配、PK天梯排行与修罗塔进度</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 实时与历史排行 -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>🏆</span> 实时与历史排行
+          </div>
+          <div class="section-desc">全服或军团排行榜</div>
+        </div>
+        <div class="cmd-grid">
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">今日日贡排行 [范围]</span>
+              <span class="cmd-desc">实时日贡排名（默认本群军团前100）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">今日日贡排行&nbsp;&nbsp;|&nbsp;&nbsp;今日日贡排行 100&nbsp;&nbsp;|&nbsp;&nbsp;今日日贡排行 90-110</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">昨日日贡排行 [范围]</span>
+              <span class="cmd-desc">昨日日贡归档排名</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">本周周贡排行 [范围]</span>
+              <span class="cmd-desc">本周累计贡献实时排名</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">上周周贡排行 [范围]</span>
+              <span class="cmd-desc">上周周贡结算归档排名</span>
+            </div>
+          </div>
+
+          <div class="cmd-item">
+            <div class="cmd-main">
+              <span class="cmd-syntax">军队排行 [范围]</span>
+              <span class="cmd-desc">全服军队总排行（实时）</span>
+            </div>
+            <div class="cmd-example">
+              <span class="example-tag">示例</span>
+              <span class="example-code">军队排行&nbsp;&nbsp;|&nbsp;&nbsp;军队排行 1-50</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部提示 -->
+    <div class="footer">
+      <div class="tips">
+        <span>💡</span> 提示：参数中的 [参数] 为可选，&lt;参数&gt; 为必填；发送指令时无需输入括号。
+      </div>
+      <div class="footer-time">{{ update_time }}</div>
+    </div>
+  </div>
+</body>
+
+</html>
+
