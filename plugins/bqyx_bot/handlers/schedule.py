@@ -18,6 +18,7 @@ from ..schedule import (
     below_limit,
     calculate_yesterday,
     capture_date,
+    compute_daily_from_snapshots,
     report_date,
     snapshot_from_member,
 )
@@ -151,29 +152,61 @@ class ScheduleHandlers(BqyxServices):
         army_cache: dict[int, list] = {}
         ok = 0
         for army_id in army_ids:
+            for attempt in range(3):
+                try:
+                    items = await self._live_snapshots(
+                        user,
+                        army_cache,
+                        army_id,
+                        snapshot_day,
+                        captured_at,
+                    )
+                    await self.store.replace_member_snapshots(
+                        army_id,
+                        snapshot_day,
+                        items,
+                    )
+                    ok += 1
+                    LOG.info(
+                        "已采集军队 %s 成员 %s 人（%s）",
+                        army_id,
+                        len(items),
+                        snapshot_day,
+                    )
+                    break
+                except Exception:
+                    if attempt < 2:
+                        LOG.warning("采集军队 %s 失败，%s 秒后重试（%s/3）", army_id, 15, attempt + 1)
+                        await asyncio.sleep(15)
+                    else:
+                        LOG.exception("采集军队 %s 失败（已重试 3 次）", army_id)
+        LOG.info("成员采集完成：%s/%s 个军队", ok, len(army_ids))
+
+        # ── 计算昨日 daily ──────────────────────────────────
+        await self._compute_yesterday_daily(army_ids, snapshot_day, captured_at)
+
+    async def _compute_yesterday_daily(
+        self,
+        army_ids: list[int],
+        today: str,
+        computed_at: str,
+    ) -> None:
+        """用今天和昨天的快照，计算昨天的真实完整日贡并写入 member_daily。"""
+        yesterday = report_date()
+        for army_id in army_ids:
             try:
-                items = await self._live_snapshots(
-                    user,
-                    army_cache,
-                    army_id,
-                    snapshot_day,
-                    captured_at,
-                )
-                await self.store.replace_member_snapshots(
-                    army_id,
-                    snapshot_day,
-                    items,
-                )
-                ok += 1
+                prev = await self.store.list_member_snapshots(army_id, yesterday)
+                curr = await self.store.list_member_snapshots(army_id, today)
+                if not prev or not curr:
+                    continue
+                dailies = compute_daily_from_snapshots(prev, curr, yesterday, computed_at)
+                await self.store.upsert_member_daily(dailies)
                 LOG.info(
-                    "已采集军队 %s 成员 %s 人（%s）",
-                    army_id,
-                    len(items),
-                    snapshot_day,
+                    "已计算军队 %s 昨日 daily %s 人（%s）",
+                    army_id, len(dailies), yesterday,
                 )
             except Exception:
-                LOG.exception("采集军队 %s 失败", army_id)
-        LOG.info("成员采集完成：%s/%s 个军队", ok, len(army_ids))
+                LOG.exception("计算军队 %s 昨日 daily 失败", army_id)
 
     async def _capture_unions(self) -> None:
         """23:59 采集前 1000 军队排行。

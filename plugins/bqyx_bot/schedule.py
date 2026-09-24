@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from .models import MemberSnapshot
+from .models import MemberDaily, MemberSnapshot
 
 SHANGHAI = timezone(timedelta(hours=8))
 
@@ -24,11 +24,8 @@ def as_shanghai(now: datetime | None = None) -> datetime:
 
 
 def capture_date(now: datetime | None = None) -> str:
-    """采集归属日期：上海时区中午 12 点前算昨天，之后算当天。"""
-    local = as_shanghai(now)
-    if local.hour < 12:
-        local = local - timedelta(days=1)
-    return local.date().isoformat()
+    """采集归属日期：严格以采集时刻所在的上海自然日作为快照日期。"""
+    return as_shanghai(now).date().isoformat()
 
 
 def report_date(now: datetime | None = None) -> str:
@@ -87,10 +84,12 @@ def snapshot_from_member(
 
 
 def day_baseline(item: MemberSnapshot) -> int:
+    """计算快照所属自然日的「0点总贡献」（0点起步基线）。"""
     return item.contribution - item.con_day
 
 
 def yesterday_contribution(previous: MemberSnapshot, current: MemberSnapshot) -> int:
+    """通过相邻两次快照的0点总贡献之差，计算出昨天的真实日贡。"""
     return max(day_baseline(current) - day_baseline(previous), 0)
 
 
@@ -113,6 +112,47 @@ def calculate_yesterday(
             )
         )
     return rank_scores(scores)
+
+
+def compute_daily_from_snapshots(
+    previous_items: list[MemberSnapshot],
+    current_items: list[MemberSnapshot],
+    target_date: str,
+    computed_at: str | None = None,
+) -> list[MemberDaily]:
+    """通过相邻两天快照计算目标日期的真实完整日贡。
+
+    计算公式：
+        0点总贡献(D)   = snapshot[D].contribution - snapshot[D].con_day
+        0点总贡献(D+1) = snapshot[D+1].contribution - snapshot[D+1].con_day
+        真实日贡(D)    = 0点总贡献(D+1) - 0点总贡献(D)
+    若无前一日快照，则回退为目标日快照中的 con_day。
+    """
+    previous_map = {item.uid: item for item in previous_items}
+    records: list[MemberDaily] = []
+    now_str = computed_at or datetime.now(timezone.utc).isoformat()
+
+    for current in current_items:
+        prev = previous_map.get(current.uid)
+        if prev is not None:
+            curr_start = current.contribution - current.con_day
+            prev_start = prev.contribution - prev.con_day
+            daily_val = max(curr_start - prev_start, 0)
+        else:
+            daily_val = max(current.con_day, 0)
+
+        records.append(
+            MemberDaily(
+                army_id=current.army_id,
+                date=target_date,
+                uid=current.uid,
+                nickname=current.nickname,
+                daily_contribution=daily_val,
+                end_of_day_total=current.contribution,
+                computed_at=now_str,
+            )
+        )
+    return records
 
 
 def rank_scores(items: list[YesterdayScore]) -> list[YesterdayScore]:

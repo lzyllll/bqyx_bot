@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 
 from ncatbot.core import registrar
 from ncatbot.event.qq import GroupMessageEvent
@@ -109,8 +110,8 @@ class QueryHandlers(BqyxServices):
                 raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
             raise UserNotBoundError()
 
-        # 解析查询月份（默认当月；支持 2026-09、2026/09、202609、上月 等）
-        raw_text = getattr(getattr(event, "message", None), "text", "") or ""
+        # 解析查询月份（默认当月；支持 2026-09、2026/09、202609、上月、9月 等）
+        raw_text = event.message.text if hasattr(event, "message") and hasattr(event.message, "text") else ""
         now = as_shanghai()
         year, month = parse_year_month(raw_text, default_now=now)
 
@@ -119,42 +120,68 @@ class QueryHandlers(BqyxServices):
 
         user, army_id = await self.require_army(group_id)
 
-        # 查询当月历史快照
-        snapshots = await self.store.list_member_snapshots_for_month(
+        today = now.date()
+        today_str = today.isoformat()
+        is_current_month = (today.year == year and today.month == month)
+
+        # 1. 直接读取 member_daily 真实日贡（两表分离结构，不再混入旧快照）
+        dailies = await self.store.list_member_daily(
             uid=bind.uid,
             year=year,
             month=month,
             army_id=army_id,
         )
         daily_records: dict[str, int | None] = {
-            snap.snapshot_date: snap.con_day for snap in snapshots
+            d.date: d.daily_contribution for d in dailies
         }
 
-        # 优先从军队成员中获取最新的 detail.playerName
         player_name = None
-        today = now.date()
-        today_str = today.isoformat()
-        try:
+        if dailies:
+            player_name = dailies[-1].nickname
+
+        # 2. 当月查询：今日通过 API 实时获取，且若昨日 member_daily 缺失则触发一次懒计算入库
+        if is_current_month:
             raw_members = await user.get_members(army_id)
             for m in raw_members:
                 if str(m.uid) == str(bind.uid):
                     if m.detail:
                         if m.detail.playerName:
                             player_name = str(m.detail.playerName).strip()
-                        if m.detail.conDay is not None and today.year == year and today.month == month:
+                        # 今日是通过 API 实时获取
+                        if m.detail.conDay is not None:
                             daily_records[today_str] = int(m.detail.conDay)
                     break
-        except Exception:
-            pass
 
-        # 若在线成员列表未找到，从历史快照中的 nickname（即入库时的 detail.playerName）获取
+            # 懒计算昨日真实 daily：如果昨天尚未写入 member_daily，则触发一次计算入库
+            yesterday = today - timedelta(days=1)
+            yesterday_str = yesterday.isoformat()
+            has_yesterday_daily = any(d.date == yesterday_str for d in dailies)
+            if not has_yesterday_daily:
+                prev_snapshots = await self.store.list_member_snapshots(army_id, yesterday_str)
+                if prev_snapshots:
+                    from ..schedule import compute_daily_from_snapshots, snapshot_from_member
+
+                    curr_snapshots = [
+                        snapshot_from_member(army_id, today_str, m, captured_at=now.isoformat())
+                        for m in raw_members
+                    ]
+                    computed = compute_daily_from_snapshots(
+                        prev_snapshots, curr_snapshots, yesterday_str, computed_at=now.isoformat()
+                    )
+                    if computed:
+                        await self.store.upsert_member_daily(computed)
+                        for cd in computed:
+                            if str(cd.uid) == str(bind.uid):
+                                daily_records[yesterday_str] = cd.daily_contribution
+                                break
+
+        # 3. 角色名兜底
         if not player_name:
-            for snap in reversed(snapshots):
+            for snap in reversed(await self.store.list_member_snapshots_for_month(uid=bind.uid, year=year, month=month, army_id=army_id)):
                 if snap.nickname:
                     player_name = snap.nickname
                     break
 
-        # 最后兜底
         if not player_name:
             try:
                 account = await user.get_account(bind.uid, bind.arch_index)

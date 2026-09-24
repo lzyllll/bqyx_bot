@@ -98,6 +98,10 @@ def parse_year_month(
     if m2:
         return int(m2.group(1)), int(m2.group(2))
 
+    m3 = re.search(r"(?:^|[^\d])(0?[1-9]|1[0-2])月", raw)
+    if m3:
+        return year, int(m3.group(1))
+
     return year, month
 
 

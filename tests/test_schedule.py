@@ -38,9 +38,9 @@ def test_capture_date_keeps_evening_on_same_day():
     assert capture_date(now) == "2026-08-23"
 
 
-def test_capture_date_after_midnight_stays_previous_day():
+def test_capture_date_after_midnight_is_today():
     now = datetime(2026, 8, 24, 0, 5, tzinfo=TZ)
-    assert capture_date(now) == "2026-08-23"
+    assert capture_date(now) == "2026-08-24"
 
 
 def test_report_date_at_noon_is_yesterday():

@@ -55,6 +55,28 @@ class MemberSnapshot:
 
 
 @dataclass(frozen=True)
+class MemberDaily:
+    """某成员某天的真实完整日贡（由连续两天快照 baseline 差值计算得出）。
+
+    与 MemberSnapshot 分离存储：snapshot 保存 API 原始采集值，
+    daily 保存经过 baseline 差值修正后的准确日贡——包含 23:30~24:00 贡献。
+
+    计算公式：
+        baseline(D) = snapshot[D].contribution - snapshot[D].con_day
+        daily_contribution = baseline(D+1) - baseline(D)
+        end_of_day_total   = baseline(D+1)
+    """
+
+    army_id: int
+    date: str  # 归属自然日 YYYY-MM-DD
+    uid: str
+    nickname: str  # 计算时的角色名
+    daily_contribution: int  # 真实完整日贡
+    end_of_day_total: int  # 当日结束时累计总贡献
+    computed_at: str  # 计算写入时间
+
+
+@dataclass(frozen=True)
 class UnionSnapshot:
     """某一天 23:59 采集的军队排行快照（前 1000 名）。
 

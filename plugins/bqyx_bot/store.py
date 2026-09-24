@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import MemberSnapshot, UnionSnapshot, UserBind
+from .models import MemberDaily, MemberSnapshot, UnionSnapshot, UserBind
 
 SHANGHAI = timezone(timedelta(hours=8))
 COMMAND_STATS_RETENTION_MONTHS = 2
@@ -289,6 +289,66 @@ class SqliteStore:
         rows = await self._run(self._fetchall, query, params)
         return [self._row_to_snapshot(row) for row in rows]
 
+    # ── member_daily（计算后的真实日贡）─────────────────────────
+
+    async def upsert_member_daily(
+        self,
+        items: list[MemberDaily],
+    ) -> None:
+        """批量写入计算后的每日真实贡献（已存在则覆盖）。"""
+        if not items:
+            return
+        await self._run(self._upsert_member_daily, items)
+
+    async def list_member_daily(
+        self,
+        uid: str,
+        year: int,
+        month: int,
+        army_id: int | None = None,
+    ) -> list[MemberDaily]:
+        """查询某成员在指定年月的每日真实贡献（按日期升序）。"""
+        last_day = calendar.monthrange(year, month)[1]
+        start_date = f"{year:04d}-{month:02d}-01"
+        end_date = f"{year:04d}-{month:02d}-{last_day:02d}"
+        if army_id is not None:
+            query = """
+            SELECT army_id, date, uid, nickname,
+                   daily_contribution, end_of_day_total, computed_at
+            FROM member_daily
+            WHERE army_id = ? AND uid = ? AND date >= ? AND date <= ?
+            ORDER BY date ASC
+            """
+            params = (int(army_id), str(uid), start_date, end_date)
+        else:
+            query = """
+            SELECT army_id, date, uid, nickname,
+                   daily_contribution, end_of_day_total, computed_at
+            FROM member_daily
+            WHERE uid = ? AND date >= ? AND date <= ?
+            ORDER BY date ASC
+            """
+            params = (str(uid), start_date, end_date)
+        rows = await self._run(self._fetchall, query, params)
+        return [self._row_to_daily(row) for row in rows]
+
+    async def list_member_daily_dates(
+        self,
+        army_id: int,
+        start_date: str,
+        end_date: str,
+    ) -> set[str]:
+        """查询某军队在日期范围内已有 daily 记录的日期集合（用于判断哪些天需要回填）。"""
+        rows = await self._run(
+            self._fetchall,
+            """
+            SELECT DISTINCT date FROM member_daily
+            WHERE army_id = ? AND date >= ? AND date <= ?
+            """,
+            (int(army_id), start_date, end_date),
+        )
+        return {str(row[0]) for row in rows}
+
     async def replace_union_snapshots(
         self,
         snapshot_date: str,
@@ -419,6 +479,18 @@ class SqliteStore:
                     today_contribution INTEGER,
                     captured_at TEXT NOT NULL,
                     PRIMARY KEY (snapshot_date, union_id)
+                );
+                -- 成员每日真实日贡（由连续两天快照 baseline 差值计算得出）。
+                -- 与 member_snapshot 分离：snapshot 存 API 原始值，daily 存修正后的准确日贡。
+                CREATE TABLE IF NOT EXISTS member_daily (
+                    army_id INTEGER NOT NULL,
+                    date TEXT NOT NULL,
+                    uid TEXT NOT NULL,
+                    nickname TEXT NOT NULL,
+                    daily_contribution INTEGER NOT NULL,
+                    end_of_day_total INTEGER NOT NULL,
+                    computed_at TEXT NOT NULL,
+                    PRIMARY KEY (army_id, date, uid)
                 );
                 """
             )
@@ -572,6 +644,10 @@ class SqliteStore:
             "DELETE FROM member_snapshot WHERE snapshot_date < ?",
             (cutoff,),
         )
+        conn.execute(
+            "DELETE FROM member_daily WHERE date < ?",
+            (cutoff,),
+        )
 
     def _replace_union_snapshots(
         self,
@@ -658,6 +734,48 @@ class SqliteStore:
             con_day=int(row[6]),
             this_week=int(row[7]),
             captured_at=str(row[8]),
+        )
+
+    def _upsert_member_daily(self, items: list[MemberDaily]) -> None:
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT INTO member_daily (
+                    army_id, date, uid, nickname,
+                    daily_contribution, end_of_day_total, computed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(army_id, date, uid) DO UPDATE SET
+                    nickname = excluded.nickname,
+                    daily_contribution = excluded.daily_contribution,
+                    end_of_day_total = excluded.end_of_day_total,
+                    computed_at = excluded.computed_at
+                """,
+                [
+                    (
+                        int(item.army_id),
+                        str(item.date),
+                        str(item.uid),
+                        str(item.nickname),
+                        int(item.daily_contribution),
+                        int(item.end_of_day_total),
+                        str(item.computed_at),
+                    )
+                    for item in items
+                ],
+            )
+            self._prune_old_snapshots(conn)
+            conn.commit()
+
+    @staticmethod
+    def _row_to_daily(row: tuple[Any, ...]) -> MemberDaily:
+        return MemberDaily(
+            army_id=int(row[0]),
+            date=str(row[1]),
+            uid=str(row[2]),
+            nickname=str(row[3]),
+            daily_contribution=int(row[4]),
+            end_of_day_total=int(row[5]),
+            computed_at=str(row[6]),
         )
 
     @staticmethod
