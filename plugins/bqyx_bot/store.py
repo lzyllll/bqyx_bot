@@ -35,7 +35,6 @@ class SqliteStore:
         self.path = Path(path)
         # 成员快照 (member_snapshot) 与 真实日贡 (member_daily) 的历史保留天数。
         # 默认 63 天（约两个月），由环境变量 BQYX_SNAPSHOT_RETENTION_DAYS 控制。
-        # 超过此窗口的历史快照与日贡数据会在写入时被自动同步清理。
         self.retention_days = retention_days
         self.union_retention_days = retention_days if union_retention_days is None else union_retention_days
         self._lock = asyncio.Lock()
@@ -233,10 +232,7 @@ class SqliteStore:
 
         快照按军队存储（不按 QQ 群）：先删除该 army_id + snapshot_date 的旧记录，
         再整体插入当天新快照，保证每个「军队 × 日期」只有一份最新采集结果。
-
-        【历史数据自动清理】：
-        写入完成后会自动调用 `_prune_old_snapshots`，同步清理早于保留窗口
-        （由 retention_days 控制，默认 63 天约 2 个月）的 member_snapshot 和 member_daily 记录。
+        写入完成后会自动调用 `_prune_old_member_snapshots` 清理超过保留窗口的历史成员快照。
         """
         await self._run(
             self._replace_member_snapshots,
@@ -304,10 +300,7 @@ class SqliteStore:
     ) -> None:
         """批量写入计算后的每日真实贡献（已存在则覆盖）。
 
-        【历史数据自动清理】：
-        写入完成后会自动调用 `_prune_old_snapshots`，同步清理早于保留窗口
-        （由 retention_days 控制，默认 63 天约 2 个月）的 member_daily 和 member_snapshot 历史数据，
-        保证 member_daily 不会无限膨胀。
+        写入完成后会自动调用 `_prune_old_member_daily` 清理超过保留窗口的历史真实日贡。
         """
         if not items:
             return
@@ -639,29 +632,36 @@ class SqliteStore:
                     for item in items
                 ],
             )
-            self._prune_old_snapshots(conn)
+            self._prune_old_member_snapshots(conn)
             conn.commit()
 
-    def _prune_old_snapshots(self, conn: sqlite3.Connection) -> None:
-        """删除超过指定时间窗口的历史快照 (member_snapshot) 与历史真实日贡 (member_daily)。
+    def _prune_old_member_snapshots(self, conn: sqlite3.Connection) -> None:
+        """删除超过指定保留窗口的成员原始快照 (member_snapshot)。
 
-        【保留规则】：
-        - 窗口由 self.retention_days 控制（对应环境变量 BQYX_SNAPSHOT_RETENTION_DAYS，默认 63 天约两个月）；
-        - retention_days <= 0 表示永久保留，不执行清理；
-        - 计算 cutoff 日期：今天（上海时区）减去 (retention_days - 1) 天；
-        - 严格删除早于 cutoff（即 snapshot_date < cutoff 和 date < cutoff）的所有历史数据。
+        snapshot_date 是 yyyy-mm-dd 字符串，可直接按字典序比较。
+        保留最近 retention_days 份（含当天）；retention_days <= 0 表示不清理。
         """
         if self.retention_days <= 0:
             return
         cutoff = (
             datetime.now(SHANGHAI) - timedelta(days=self.retention_days - 1)
         ).date().isoformat()
-        # 1. 清理过期成员原始采集快照
         conn.execute(
             "DELETE FROM member_snapshot WHERE snapshot_date < ?",
             (cutoff,),
         )
-        # 2. 清理过期计算后的每日真实日贡
+
+    def _prune_old_member_daily(self, conn: sqlite3.Connection) -> None:
+        """删除超过指定保留窗口的成员每日真实日贡 (member_daily)。
+
+        date 是 yyyy-mm-dd 字符串，可直接按字典序比较。
+        保留最近 retention_days 份（含当天）；retention_days <= 0 表示不清理。
+        """
+        if self.retention_days <= 0:
+            return
+        cutoff = (
+            datetime.now(SHANGHAI) - timedelta(days=self.retention_days - 1)
+        ).date().isoformat()
         conn.execute(
             "DELETE FROM member_daily WHERE date < ?",
             (cutoff,),
@@ -755,7 +755,6 @@ class SqliteStore:
         )
 
     def _upsert_member_daily(self, items: list[MemberDaily]) -> None:
-        """批量写入/覆盖真实日贡数据，并顺带执行过期数据清理（member_daily 和 member_snapshot）。"""
         with self._connect() as conn:
             conn.executemany(
                 """
@@ -782,7 +781,7 @@ class SqliteStore:
                     for item in items
                 ],
             )
-            self._prune_old_snapshots(conn)
+            self._prune_old_member_daily(conn)
             conn.commit()
 
     @staticmethod

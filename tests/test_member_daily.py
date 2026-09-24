@@ -129,7 +129,7 @@ async def test_member_daily_pruning_shares_retention(tmp_path):
     await store.replace_member_snapshots(1, "2026-09-24", [recent_snap])
     await store.upsert_member_daily([recent_daily])
 
-    # 写入新快照时会触发 _prune_old_snapshots
+    # 写入新快照时会触发 _prune_old_member_snapshots
     now_today = as_shanghai().date().isoformat()
     await store.replace_member_snapshots(
         1,
@@ -148,8 +148,22 @@ async def test_member_daily_pruning_shares_retention(tmp_path):
             )
         ],
     )
+    # 写入新日贡时会触发 _prune_old_member_daily
+    await store.upsert_member_daily(
+        [
+            MemberDaily(
+                army_id=1,
+                date=now_today,
+                uid="u1",
+                nickname="老玩家",
+                daily_contribution=1000,
+                end_of_day_total=3000,
+                computed_at="now",
+            )
+        ]
+    )
 
-    # 验证 2020-01-01 的 snapshot 和 daily 均已被清理
+    # 验证 2020-01-01 的 snapshot 和 daily 均已被独立清理
     snaps_old = await store.list_member_snapshots_for_month(uid="u1", year=2020, month=1, army_id=1)
     dailies_old = await store.list_member_daily(uid="u1", year=2020, month=1, army_id=1)
     assert len(snaps_old) == 0
