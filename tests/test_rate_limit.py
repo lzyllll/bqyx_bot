@@ -100,10 +100,11 @@ async def test_command_limits_are_per_command_and_share_global_rpm(monkeypatch):
     assert await second_handler(SimpleNamespace(), second_event) == "second"
     assert total_call_limit.calls_in_period() == 2
 
-    # 同一群重复第一条命令被拦截，但另一条命令拥有独立的群窗口。
+    # DEFAULT_COMMAND_MAX_CALLS 为 2：同一群第二次放行，第三次被拦截
+    assert await first_handler(SimpleNamespace(), first_event) == "first"
     assert await first_handler(SimpleNamespace(), first_event) is None
     assert first_event.replies == ["操作太频繁，请 30 秒后再试。"]
-    assert total_call_limit.calls_in_period() == 2
+    assert total_call_limit.calls_in_period() == 3
 
     total_call_limit.reset()
 
@@ -180,8 +181,9 @@ async def test_command_stats_record_only_calls_that_pass_both_limits(monkeypatch
 
     plugin = SimpleNamespace(store=store)
     assert await handler(plugin, event) == "ok"
+    assert await handler(plugin, event) == "ok"
     assert await handler(plugin, event) is None
-    assert store.counts == {"测试指令": 1}
+    assert store.counts == {"测试指令": 2}
     total_call_limit.reset()
 
 

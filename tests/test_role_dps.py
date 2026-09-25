@@ -116,8 +116,7 @@ async def test_check_my_dps_success_flow():
     mock_summary = SimpleNamespace()
 
     player_bonus_mock = MagicMock()
-    player_bonus_mock.get_role_panel_and_bonus.return_value = (mock_panel_view, mock_summary)
-    player_bonus_mock.get_role_panel_and_bonus_async = AsyncMock(return_value=(mock_panel_view, mock_summary))
+    player_bonus_mock.get_role_panel_and_bonus = AsyncMock(return_value=(mock_panel_view, mock_summary))
 
     reply_mock = AsyncMock()
 
@@ -129,14 +128,15 @@ async def test_check_my_dps_success_flow():
 
     event = FakeEvent()
 
-    with (
-        patch("bqyx_bot.handlers.query.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
-        patch("bqyx_bot.handlers.query.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
-        patch("bqyx_bot.handlers.query.render_role_arms_image_async", new=AsyncMock(return_value=b"arms_png")),
-    ):
+    mock_renderer = MagicMock()
+    mock_renderer.panel_image = AsyncMock(return_value=b"panel_png")
+    mock_renderer.bonus_image = AsyncMock(side_effect=[b"prop_png", b"mod_png"])
+    mock_renderer.arms_image = AsyncMock(return_value=b"arms_png")
+
+    with patch("bqyx_bot.handlers.query.PlayerHtmlRenderer", return_value=mock_renderer):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event)
 
-    player_bonus_mock.get_role_panel_and_bonus_async.assert_awaited_once()
+    player_bonus_mock.get_role_panel_and_bonus.assert_awaited_once()
     reply_mock.send_role_dps_report.assert_awaited_once_with(
         event,
         b"panel_png",
@@ -166,8 +166,7 @@ async def test_check_other_user_dps_flow():
     mock_summary = SimpleNamespace()
 
     player_bonus_mock = MagicMock()
-    player_bonus_mock.get_role_panel_and_bonus.return_value = (mock_panel_view, mock_summary)
-    player_bonus_mock.get_role_panel_and_bonus_async = AsyncMock(return_value=(mock_panel_view, mock_summary))
+    player_bonus_mock.get_role_panel_and_bonus = AsyncMock(return_value=(mock_panel_view, mock_summary))
 
     reply_mock = AsyncMock()
 
@@ -180,11 +179,12 @@ async def test_check_other_user_dps_flow():
     event = FakeEvent(user_id="10001", group_id="20002")
     target = SimpleNamespace(user_id="88888")
 
-    with (
-        patch("bqyx_bot.handlers.query.render_role_panel_image_async", new=AsyncMock(return_value=b"panel_png")),
-        patch("bqyx_bot.handlers.query.render_role_bonus_image_async", new=AsyncMock(side_effect=[b"prop_png", b"mod_png"])),
-        patch("bqyx_bot.handlers.query.render_role_arms_image_async", new=AsyncMock(return_value=b"arms_png")),
-    ):
+    mock_renderer = MagicMock()
+    mock_renderer.panel_image = AsyncMock(return_value=b"panel_png")
+    mock_renderer.bonus_image = AsyncMock(side_effect=[b"prop_png", b"mod_png"])
+    mock_renderer.arms_image = AsyncMock(return_value=b"arms_png")
+
+    with patch("bqyx_bot.handlers.query.PlayerHtmlRenderer", return_value=mock_renderer):
         await handlers.check_my_dps.__wrapped__.__wrapped__(handlers, event, target=target)
 
     # 确认是用目标用户的 QQ 查询绑定
@@ -192,7 +192,7 @@ async def test_check_other_user_dps_flow():
     # 确认是用目标用户的 uid 和 arch_index 获取游戏账号
     mock_game_user.get_account.assert_awaited_once_with("88888888", 2)
     # 确认角色面板与加成计算使用的是目标用户的 uid 与 arch_index
-    player_bonus_mock.get_role_panel_and_bonus_async.assert_awaited_once_with(
+    player_bonus_mock.get_role_panel_and_bonus.assert_awaited_once_with(
         mock_account_data,
         uid="88888888",
         archive_index=2,

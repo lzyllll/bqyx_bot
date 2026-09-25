@@ -17,11 +17,7 @@ from ..parsing import (
 )
 from ..render import MyContributionRenderer
 from ..schedule import as_shanghai
-from bqyx_api.archive.player.render import (
-    render_role_arms_image_async,
-    render_role_bonus_image_async,
-    render_role_panel_image_async,
-)
+from bqyx_api.render import PlayerHtmlRenderer
 
 class QueryHandlers(BqyxServices):
     @error_reply
@@ -65,7 +61,7 @@ class QueryHandlers(BqyxServices):
                 pass
 
         service = self.player_bonus
-        view, summary = await service.get_role_panel_and_bonus_async(
+        view, summary = await service.get_role_panel_and_bonus(
             account,
             uid=bind.uid,
             archive_index=bind.arch_index,
@@ -74,10 +70,11 @@ class QueryHandlers(BqyxServices):
             member_list=member_list,
         )
 
-        panel_png = await render_role_panel_image_async(view)
-        bonus_prop_png = await render_role_bonus_image_async(summary, mode="property")
-        bonus_mod_png = await render_role_bonus_image_async(summary, mode="module")
-        arms_png = await render_role_arms_image_async(view)
+        renderer = PlayerHtmlRenderer()
+        panel_png = await renderer.panel_image(view)
+        bonus_prop_png = await renderer.bonus_image(summary, mode="property")
+        bonus_mod_png = await renderer.bonus_image(summary, mode="module")
+        arms_png = await renderer.arms_image(view)
 
         player_name = view.player_name or account.title or bind.uid
         title = f"{player_name} 的战力"
