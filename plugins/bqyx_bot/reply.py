@@ -6,10 +6,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-from bqyx_api.archive import DemonRenderer
 from bqyx_api.archive.union import UnionPKRankAgent
-from bqyx_api.archive.union.render import Renderer as UnionRenderer
-from bqyx_api.render import UnionPKRankRenderer
+from bqyx_api.render import (
+    DemonRenderer,
+    DomainRenderer,
+    PlayerHtmlRenderer,
+    UnionInfoRenderer,
+    UnionMembersRenderer,
+    UnionPKRankRenderer,
+    UnionTaskRenderer,
+)
 from ncatbot.event.qq import GroupMessageEvent
 from ncatbot.types.qq import ForwardConstructor
 
@@ -19,6 +25,13 @@ class ReplyService:
         self.api = api
         self.workspace = Path(workspace)
         self.bot_id = bot_id or "123456"
+        self.members_renderer = UnionMembersRenderer()
+        self.domain_renderer = DomainRenderer()
+        self.union_info_renderer = UnionInfoRenderer()
+        self.pk_rank_renderer = UnionPKRankRenderer()
+        self.task_renderer = UnionTaskRenderer()
+        self.demon_renderer = DemonRenderer()
+        self.player_renderer = PlayerHtmlRenderer()
 
     def set_bot_id(self, bot_id: str | int) -> None:
         self.bot_id = str(bot_id)
@@ -100,7 +113,7 @@ class ReplyService:
     ) -> None:
         member_list = list(members)
         if format_type == "图片":
-            png = await UnionRenderer.members.image(
+            png = await self.members_renderer.image(
                 member_list,
                 title=title,
                 uid=uid,
@@ -111,13 +124,13 @@ class ReplyService:
         if format_type == "表格":
             await self._send_excel(
                 event,
-                UnionRenderer.members.excel(member_list),
+                self.members_renderer.excel(member_list),
                 file_prefix,
                 "正在上传成员表格...",
             )
             return
 
-        reply_text = (text_content or UnionRenderer.members.text(member_list)).strip()
+        reply_text = (text_content or self.members_renderer.text(member_list)).strip()
         await self._send_text(event, reply_text)
 
     async def send_domain(
@@ -134,18 +147,18 @@ class ReplyService:
         if format_type == "图片":
             await self._send_image(
                 event,
-                UnionRenderer.domain.image(member_list, union_info, uid=uid),
+                self.domain_renderer.image(member_list, union_info, uid=uid),
             )
             return
         if format_type == "表格":
             await self._send_excel(
                 event,
-                UnionRenderer.domain.excel(member_list, union_info, uid=uid),
+                self.domain_renderer.excel(member_list, union_info, uid=uid),
                 file_prefix,
                 "正在上传争霸表格...",
             )
             return
-        await event.reply(UnionRenderer.domain.text(member_list, union_info, uid=uid))
+        await event.reply(self.domain_renderer.text(member_list, union_info, uid=uid))
 
     async def send_pk_rank(
         self,
@@ -157,7 +170,7 @@ class ReplyService:
     ) -> None:
         agent = UnionPKRankAgent.from_members(members)
         if format_type == "图片":
-            png = await UnionPKRankRenderer().render_png(
+            png = await self.pk_rank_renderer.render_png(
                 agent,
                 uid=uid,
                 captured_at=time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -177,10 +190,10 @@ class ReplyService:
         if format_type == "文本":
             await self._send_text(
                 event,
-                UnionRenderer.contribution.text(union_data=union_data, title=title),
+                self.task_renderer.text(union_data=union_data, title=title),
             )
             return
-        png = await UnionRenderer.contribution.image(union_data=union_data, title=title)
+        png = await self.task_renderer.image(union_data=union_data, title=title)
         await self._send_image(event, png)
 
     async def send_my_contribution_wall(
@@ -199,9 +212,9 @@ class ReplyService:
         title: str = "修罗地图",
     ) -> None:
         if format_type == "文本":
-            await self._send_text(event, f"{title}\n{DemonRenderer.text(result)}")
+            await self._send_text(event, f"{title}\n{self.demon_renderer.text(result)}")
             return
-        png = await DemonRenderer.image(
+        png = await self.demon_renderer.image(
             result,
             title=title,
             captured_at=time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -215,9 +228,9 @@ class ReplyService:
         format_type: str = "图片",
     ) -> None:
         if format_type == "图片":
-            await self._send_image(event, UnionRenderer.union_info.image(union_info))
+            await self._send_image(event, self.union_info_renderer.image(union_info))
             return
-        await event.reply(UnionRenderer.union_info.text(union_info))
+        await event.reply(self.union_info_renderer.text(union_info))
 
     async def send_my_things(
         self,
