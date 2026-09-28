@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from astrbot.api import logger
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from bqyx_api.archive.union import UnionSave
-from ..context import BqyxServices, PendingSessionFilter
+from ..context import BqyxServices, MemberChoice, PendingSessionFilter
 from ..errors import (
     ArmyNotBoundError,
     ArmyNotFoundError,
@@ -233,76 +233,28 @@ class BindHandlers(BqyxServices):
             detail = str(exc).strip()
             raise BotError(f"获取本群军队成员失败：{detail or type(exc).__name__}")
 
-        target_lower = target_name.lower()
-        matches = [
-            m
-            for m in raw_members
-            if target_lower in (m.detail.playerName or "").lower()
-        ]
+        target_member = None
+        async for item in self.resolve_member_by_name(
+            event, raw_members, target_name, action="绑定"
+        ):
+            if isinstance(item, MemberChoice):
+                target_member = item.member
+            else:
+                yield item
 
-        if not matches:
-            raise BotError(f"未在本群军队中找到包含「{target_name}」的成员。")
+        if not target_member:
+            return
 
         sender_id = str(event.get_sender_id() or "")
-        if len(matches) == 1:
-            target_member = matches[0]
-            player_name = target_member.detail.playerName or target_name
-            await self.store.set_user_bind(
-                group_id,
-                sender_id,
-                str(target_member.uid),
-                int(target_member.index),
-            )
-            msg = f"QQ {sender_id} 已成功绑定游戏角色：{player_name}"
-            yield self.replies.markdown_success(event, msg)
-            return
-
-        lines = [
-            f"{i}. {md_cmd_input(m.detail.playerName or target_name, str(i))} (总贡献: {m.contribution:,})"
-            for i, m in enumerate(matches, 1)
-        ]
-
-        cancel_btn = md_cmd_input("取消", "取消")
-        yield self.replies.markdown_tip(
-            event,
-            f"找到多个包含「{target_name}」的游戏角色，请回复序号进行绑定：",
-            "\n".join(lines),
-            f"30秒内有效，可直接点击角色名或回复序号；回复“取消”或点击 {cancel_btn} 退出",
+        player_name = target_member.detail.playerName or target_name
+        await self.store.set_user_bind(
+            group_id,
+            sender_id,
+            str(target_member.uid),
+            int(target_member.index),
         )
-
-        result = await self.wait_session_reply(
-            event,
-            timeout=30,
-            cancel_words=["取消", "退出", "q", "Q"],
-        )
-
-        if result.timed_out:
-            yield self.replies.markdown_warn(event, "等待超时，已退出绑定流程。")
-            return
-        if result.cancelled:
-            yield self.replies.markdown_warn(event, "已取消绑定。")
-            return
-
-        if result.ok:
-            idx = parse_choice_index(result.text, len(matches))
-            if idx is None:
-                err_msg = f"输入无效序号「{result.text or ''}」，绑定已取消。"
-                yield self.replies.markdown_warn(event, err_msg)
-                return
-
-            target_member = matches[idx - 1]
-            player_name = target_member.detail.playerName or target_name
-            await self.store.set_user_bind(
-                group_id,
-                sender_id,
-                str(target_member.uid),
-                int(target_member.index),
-            )
-            msg = f"QQ {sender_id} 已成功绑定游戏角色：{player_name}"
-            yield self.replies.markdown_success(event, msg)
-        else:
-            err_msg = "未收到有效回复，已退出绑定流程。"
-            yield self.replies.markdown_warn(event, err_msg)
+        msg = f"QQ {sender_id} 已成功绑定游戏角色：{player_name}"
+        yield self.replies.markdown_success(event, msg)
 
     @filter.command("我的绑定")
     @error_reply

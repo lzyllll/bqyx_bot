@@ -5,9 +5,10 @@ from datetime import timedelta
 from typing import Any
 
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
+from bqyx_api.api.GameUser import GameUser
 from bqyx_api.render import PlayerHtmlRenderer
 
-from ..context import BqyxServices
+from ..context import BqyxServices, MemberChoice
 from ..errors import (
     ArmyNotBoundError,
     BotError,
@@ -19,6 +20,7 @@ from ..hooks import command_rate_limit, error_reply, my_dps_limit
 from ..models import ContributionKind
 from ..parsing import (
     extract_command_arg,
+    extract_name_and_month,
     parse_format,
     parse_format_and_limit,
     parse_year_month,
@@ -29,7 +31,7 @@ from ..schedule import as_shanghai
 
 
 class QueryHandlers(BqyxServices):
-    async def _get_army(self, group_id: str) -> tuple[Any, int]:
+    async def _get_army(self, group_id: str) -> tuple[GameUser, int]:
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
             raise ArmyNotBoundError()
@@ -109,28 +111,78 @@ class QueryHandlers(BqyxServices):
         event: AstrMessageEvent,
         month_arg: str = "",
     ) -> None:
-        """查询本月每日日贡贡献日历墙。支持指定月份（如 2026-09 或 上月）。"""
+        """查询本月每日日贡贡献日历墙。支持指定月份或指定角色名（如 查贡献 逍遥剑仙 或 查贡献 2026-09）。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
             raise GroupOnlyError()
 
-        qq_id = str(event.get_sender_id() or "")
-        bind = await self.store.get_user_bind(group_id, qq_id)
-        if bind is None:
-            raise UserNotBoundError()
+        raw_arg = ""
+        if event is not None and getattr(event, "message_str", None):
+            raw_arg = extract_command_arg(
+                "",
+                event,
+                (
+                    "/我的贡献",
+                    "/查贡献",
+                    "/贡献墙",
+                    "/我的日贡",
+                    "我的贡献",
+                    "查贡献",
+                    "贡献墙",
+                    "我的日贡",
+                ),
+            ).strip()
+        if not raw_arg:
+            raw_arg = extract_command_arg(
+                month_arg, event, ("我的贡献", "查贡献", "贡献墙", "我的日贡")
+            ).strip()
 
-        raw_text = event.message_str or ""
         now = as_shanghai()
-        year, month = parse_year_month(raw_text, default_now=now)
+        target_name, year, month = extract_name_and_month(raw_arg, default_now=now)
 
         if not (1 <= month <= 12 and 2000 <= year <= 2100):
             raise ParamError(
                 "月份格式无效",
-                usage="/我的贡献 或 /我的贡献 2026-09",
-                extra="示例：我的贡献 2026-09 或 我的贡献 上月",
+                usage="/我的贡献 或 /查贡献 角色名 2026-09",
+                extra="示例：查贡献 2026-09 或 查贡献 逍遥剑仙 或 我的贡献 上月",
             )
 
         user, army_id = await self._get_army(group_id)
+        raw_members = await user.get_members(army_id)
+
+        player_name = None
+        if target_name:
+            target_member = None
+            async for item in self.resolve_member_by_name(
+                event, raw_members, target_name, action="查询"
+            ):
+                if isinstance(item, MemberChoice):
+                    target_member = item.member
+                else:
+                    yield item
+
+            if not target_member:
+                return
+
+            target_uid = str(target_member.uid)
+            target_arch_index = (
+                int(target_member.index)
+                if getattr(target_member, "index", None) is not None
+                else 0
+            )
+            if getattr(target_member, "detail", None) and getattr(
+                target_member.detail, "playerName", None
+            ):
+                player_name = str(target_member.detail.playerName).strip()
+            else:
+                player_name = target_name
+        else:
+            qq_id = str(event.get_sender_id() or "")
+            bind = await self.store.get_user_bind(group_id, qq_id)
+            if bind is None:
+                raise UserNotBoundError()
+            target_uid = str(bind.uid)
+            target_arch_index = int(bind.arch_index)
 
         today = now.date()
         today_str = today.isoformat()
@@ -138,7 +190,7 @@ class QueryHandlers(BqyxServices):
 
         # 1. 直接读取 member_daily 真实日贡
         dailies = await self.store.list_member_daily(
-            uid=bind.uid,
+            uid=target_uid,
             year=year,
             month=month,
             army_id=army_id,
@@ -147,17 +199,15 @@ class QueryHandlers(BqyxServices):
             d.date: d.daily_contribution for d in dailies
         }
 
-        player_name = None
-        if dailies:
+        if dailies and not player_name:
             player_name = dailies[-1].nickname
 
         # 2. 当月查询：今日通过 API 实时获取，且若昨日 member_daily 缺失则触发一次懒计算入库
         if is_current_month:
-            raw_members = await user.get_members(army_id)
             for m in raw_members:
-                if str(m.uid) == str(bind.uid):
+                if str(m.uid) == str(target_uid):
                     if m.detail:
-                        if m.detail.playerName:
+                        if m.detail.playerName and not player_name:
                             player_name = str(m.detail.playerName).strip()
                         if m.detail.conDay is not None:
                             daily_records[today_str] = int(m.detail.conDay)
@@ -192,7 +242,7 @@ class QueryHandlers(BqyxServices):
                     if computed:
                         await self.store.upsert_member_daily(computed)
                         for cd in computed:
-                            if str(cd.uid) == str(bind.uid):
+                            if str(cd.uid) == str(target_uid):
                                 daily_records[yesterday_str] = cd.daily_contribution
                                 break
 
@@ -200,7 +250,7 @@ class QueryHandlers(BqyxServices):
         if not player_name:
             for snap in reversed(
                 await self.store.list_member_snapshots_for_month(
-                    uid=bind.uid, year=year, month=month, army_id=army_id
+                    uid=target_uid, year=year, month=month, army_id=army_id
                 )
             ):
                 if snap.nickname:
@@ -209,10 +259,10 @@ class QueryHandlers(BqyxServices):
 
         if not player_name:
             try:
-                account = await user.get_account(bind.uid, bind.arch_index)
-                player_name = account.title or bind.uid
+                account = await user.get_account(target_uid, target_arch_index)
+                player_name = account.title or target_uid
             except Exception:
-                player_name = bind.uid
+                player_name = target_uid
 
         renderer = MyContributionRenderer()
         html = renderer.html(
@@ -277,7 +327,7 @@ class QueryHandlers(BqyxServices):
         if not group_id:
             raise GroupOnlyError()
 
-        format_type = parse_format(event.message_str, "图片")
+        format_type = parse_format(event.message_str, "文本")
         user, army_id = await self._get_army(group_id)
         members = (await user.get_members(army_id)).sort(
             key=lambda m: m.detail.conDay,
@@ -493,7 +543,7 @@ class QueryHandlers(BqyxServices):
         limit, format_type = parse_format_and_limit(
             event.message_str,
             default_limit=ContributionKind.DAILY.default_limit,
-            default_format="图片",
+            default_format="文本",
         )
         async for res in self._send_contribution(
             event,
@@ -572,6 +622,7 @@ class QueryHandlers(BqyxServices):
         members = (await user.get_members(army_id)).filter(
             lambda m: kind.below_limit(m, limit)
         )
+ 
         if not members:
             yield event.plain_result(f"太棒了！没有人{kind.label}低于 {limit}。")
             return
@@ -588,16 +639,30 @@ class QueryHandlers(BqyxServices):
                 yield res
             return
 
-        lines = [
-            f"- {m.detail.playerName} (贡献: {kind.value_of(m)})" for m in members
-        ]
+        lines = []
+        for i, m in enumerate(members, 1):
+            p_name = (
+                getattr(getattr(m, "detail", None), "playerName", None)
+                or f"UID_{getattr(m, 'uid', '')}"
+            )
+            click_btn = md_cmd_example(p_name, f"查贡献 {p_name}")
+            lines.append(f"{i}. {click_btn} (贡献: {kind.value_of(m)})")
+
+        cmd_name = "查日贡" if kind == ContributionKind.DAILY else "查周贡"
+        image_cmd = (
+            f"{cmd_name} 图片 {limit}"
+            if limit != kind.default_limit
+            else f"{cmd_name} 图片"
+        )
+
         for res in await self.replies.build_members(
             event,
             members,
             format_type,
-            title=f"以下成员{kind.label}低于 {limit}：",
+            title=f"以下成员{kind.label}低于 {limit} (共 {len(members)} 人)：",
             file_prefix=kind.file_prefix,
-            text_content=f"以下成员{kind.label}低于 {limit}：\n" + "\n".join(lines),
+            text_lines=lines,
+            image_cmd=image_cmd,
         ):
             yield res
 

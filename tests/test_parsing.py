@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from astrbot_plugin_bqyx.parsing import (
     extract_command_arg,
+    extract_name_and_month,
     extract_uid,
     parse_choice_index,
     parse_format,
@@ -81,3 +82,17 @@ def test_parse_year_month():
 
     jan_time = datetime(2026, 1, 15)
     assert parse_year_month("我的贡献 上月", default_now=jan_time) == (2025, 12)
+
+
+def test_extract_name_and_month():
+    base_time = datetime(2026, 9, 23)
+
+    assert extract_name_and_month("", default_now=base_time) == ("", 2026, 9)
+    assert extract_name_and_month("2026-08", default_now=base_time) == ("", 2026, 8)
+    assert extract_name_and_month("上月", default_now=base_time) == ("", 2026, 8)
+    assert extract_name_and_month("张三", default_now=base_time) == ("张三", 2026, 9)
+    assert extract_name_and_month("张三 2026-08", default_now=base_time) == ("张三", 2026, 8)
+    assert extract_name_and_month("张三 上月", default_now=base_time) == ("张三", 2026, 8)
+    assert extract_name_and_month("2026-07 李四", default_now=base_time) == ("李四", 2026, 7)
+    assert extract_name_and_month("上个月 王五", default_now=base_time) == ("王五", 2026, 8)
+

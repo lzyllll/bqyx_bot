@@ -295,6 +295,51 @@ def parse_year_month(
     return year, month
 
 
+def extract_name_and_month(
+    text: str = "",
+    *,
+    default_now: datetime | None = None,
+) -> tuple[str, int, int]:
+    """从消息参数中分离角色名与目标年月。
+
+    返回: (target_name, year, month)
+    若未指定角色名，target_name 为空字符串；
+    若未指定年月，则默认返回当前年月。
+    """
+    from .schedule import as_shanghai
+
+    now = default_now or as_shanghai()
+    raw = (text or "").strip()
+    if not raw:
+        return "", now.year, now.month
+
+    tokens = raw.split()
+    date_token = None
+    name_tokens = []
+
+    date_patterns = [
+        re.compile(r"^\d{4}[-/年\.]\d{1,2}(?:月)?$"),
+        re.compile(r"^\d{6}$"),
+        re.compile(r"^(?:0?[1-9]|1[0-2])月$"),
+    ]
+
+    for t in tokens:
+        if date_token is None and (
+            t in ("上月", "上个月") or any(p.match(t) for p in date_patterns)
+        ):
+            date_token = t
+        else:
+            name_tokens.append(t)
+
+    target_name = " ".join(name_tokens).strip()
+    if date_token:
+        year, month = parse_year_month(date_token, default_now=now)
+    else:
+        year, month = now.year, now.month
+
+    return target_name, year, month
+
+
 def parse_format_and_limit(
     text: str,
     *,

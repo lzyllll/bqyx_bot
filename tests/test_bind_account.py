@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from astrbot_plugin_bqyx.errors import BotError
+from astrbot_plugin_bqyx.models import UserBind
 from astrbot_plugin_bqyx.handlers.bind import (
     BindHandlers,
     pick_member_for_uid,
@@ -69,6 +70,7 @@ class DummyBindService(BindHandlers):
         self.store = MagicMock()
         self.store.set_user_bind = AsyncMock()
         self.store.get_group_army = AsyncMock(return_value=1001)
+        self.store.list_user_binds = AsyncMock(return_value=[])
         self.user = MagicMock()
         self.user.get_members = AsyncMock(return_value=members)
         self.account = MagicMock()
@@ -389,5 +391,159 @@ async def test_wait_session_reply_cancel_with_pending_handler():
 
     assert res.ok is False
     assert res.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_bind_game_name_multi_match_classified_display():
+    members = [
+        SimpleNamespace(
+            uid="1001",
+            index=0,
+            detail=SimpleNamespace(playerName="测试剑仙"),
+            contribution=100000,
+        ),
+        SimpleNamespace(
+            uid="1002",
+            index=1,
+            detail=SimpleNamespace(playerName="逍遥剑仙"),
+            contribution=50000,
+        ),
+        SimpleNamespace(
+            uid="1003",
+            index=2,
+            detail=SimpleNamespace(playerName="无极剑仙"),
+            contribution=20000,
+        ),
+    ]
+    handler = DummyBindService(members)
+    handler.store.list_user_binds = AsyncMock(
+        return_value=[
+            UserBind(group_id="1004", qq_id="999888", uid="1002", arch_index=1),
+            UserBind(group_id="1004", qq_id="456", uid="1003", arch_index=2),
+        ]
+    )
+    event = FakeEvent(group_id="1004", user_id="456", message="绑定游戏名 剑仙")
+
+    handler.wait_session_reply = AsyncMock(
+        return_value=SimpleNamespace(
+            ok=True, text="2", timed_out=False, cancelled=False
+        )
+    )
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="剑仙")
+    assert len(results) == 2
+    prompt_text = getattr(results[0], "text", str(results[0]))
+
+    # 验证分类结构
+    assert "【未绑定】" in prompt_text
+    assert '<qqbot-cmd-input text="1" show="测试剑仙" reference="false" /> (总贡献: 100,000)' in prompt_text
+
+    assert "【已绑定】" in prompt_text
+    assert '<qqbot-cmd-input text="2" show="逍遥剑仙" reference="false" /> (总贡献: 50,000) [已绑定 QQ: 999888]' in prompt_text
+    assert '<qqbot-cmd-input text="3" show="无极剑仙" reference="false" /> (总贡献: 20,000) [当前你已绑定]' in prompt_text
+
+    # 验证回复序号 2 选中了逍遥剑仙（ordered_matches 中的第 2 项）
+    handler.store.set_user_bind.assert_awaited_once_with(
+        "1004", "456", "1002", 1
+    )
+    success_text = getattr(results[1], "text", str(results[1]))
+    assert "逍遥剑仙" in success_text
+
+
+@pytest.mark.asyncio
+async def test_bind_game_name_multi_match_all_bound_display():
+    members = [
+        SimpleNamespace(
+            uid="1001",
+            index=0,
+            detail=SimpleNamespace(playerName="剑仙甲"),
+            contribution=60000,
+        ),
+        SimpleNamespace(
+            uid="1002",
+            index=1,
+            detail=SimpleNamespace(playerName="剑仙乙"),
+            contribution=30000,
+        ),
+    ]
+    handler = DummyBindService(members)
+    handler.store.list_user_binds = AsyncMock(
+        return_value=[
+            UserBind(group_id="1005", qq_id="111", uid="1001", arch_index=0),
+            UserBind(group_id="1005", qq_id="222", uid="1002", arch_index=1),
+        ]
+    )
+    event = FakeEvent(group_id="1005", user_id="456", message="绑定游戏名 剑仙")
+
+    handler.wait_session_reply = AsyncMock(
+        return_value=SimpleNamespace(
+            ok=True, text="1", timed_out=False, cancelled=False
+        )
+    )
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="剑仙")
+    prompt_text = getattr(results[0], "text", str(results[0]))
+
+    # 未绑定应展示（无）
+    assert "【未绑定】" in prompt_text
+    assert "（无）" in prompt_text
+    # 已绑定展示两项
+    assert "【已绑定】" in prompt_text
+    assert "剑仙甲" in prompt_text
+    assert "[已绑定 QQ: 111]" in prompt_text
+    assert "剑仙乙" in prompt_text
+    assert "[已绑定 QQ: 222]" in prompt_text
+
+    handler.store.set_user_bind.assert_awaited_once_with(
+        "1005", "456", "1001", 0
+    )
+
+
+@pytest.mark.asyncio
+async def test_bind_game_name_multi_match_exact_name_reply():
+    members = [
+        SimpleNamespace(
+            uid="1001",
+            index=0,
+            detail=SimpleNamespace(playerName="剑仙李白"),
+            contribution=120000,
+        ),
+        SimpleNamespace(
+            uid="1002",
+            index=1,
+            detail=SimpleNamespace(playerName="逍遥剑仙"),
+            contribution=50000,
+        ),
+    ]
+    handler = DummyBindService(members)
+    event = FakeEvent(group_id="1006", user_id="456", message="绑定游戏名 剑仙")
+
+    # 回复精确角色名而非序号
+    handler.wait_session_reply = AsyncMock(
+        return_value=SimpleNamespace(
+            ok=True, text="逍遥剑仙", timed_out=False, cancelled=False
+        )
+    )
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="剑仙")
+    assert len(results) == 2
+    handler.store.set_user_bind.assert_awaited_once_with(
+        "1006", "456", "1002", 1
+    )
+    success_text = getattr(results[1], "text", str(results[1]))
+    assert "逍遥剑仙" in success_text
+
 
 

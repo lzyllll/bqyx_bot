@@ -264,3 +264,178 @@ async def test_check_my_contribution_wall_handler(tmp_path):
     call_args = called_mock.call_args
     assert isinstance(call_args[0][1], bytes)
     assert call_args[0][1].startswith(b"\x89PNG")
+
+
+@pytest.mark.asyncio
+async def test_check_contribution_by_name_single_match(tmp_path):
+    from astrbot_plugin_bqyx.handlers.query import QueryHandlers
+
+    store = SqliteStore(tmp_path / "handler_test2.db")
+    await store.init()
+    await store.set_group_army("group_1", 101)
+
+    mock_user = AsyncMock()
+    mock_member = SimpleNamespace(
+        uid="uid_99",
+        index=0,
+        detail=SimpleNamespace(playerName="逍遥剑仙", conDay=1400),
+        contribution=50000,
+    )
+    mock_user.get_members.return_value = [mock_member]
+
+    mock_account_service = AsyncMock()
+    mock_account_service.get_user.return_value = mock_user
+
+    mock_replies = AsyncMock()
+    mock_replies.build_my_contribution_wall.return_value = [SimpleNamespace(type="image")]
+
+    class FakeEvent:
+        def __init__(self):
+            self.message_str = "查贡献 逍遥剑仙"
+            self.message_obj = SimpleNamespace(message=[])
+
+        def get_group_id(self):
+            return "group_1"
+
+        def get_sender_id(self):
+            return "qq_unbound"
+
+    handlers = QueryHandlers()
+    handlers.store = store
+    handlers.account = mock_account_service
+    handlers.replies = mock_replies
+
+    fn = handlers.check_my_contribution_wall
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = []
+    res = fn(handlers, FakeEvent())
+    if hasattr(res, "__anext__"):
+        async for r in res:
+            results.append(r)
+    else:
+        results.append(await res)
+
+    assert mock_replies.build_my_contribution_wall.called
+
+
+@pytest.mark.asyncio
+async def test_check_contribution_by_name_multi_match_session(tmp_path):
+    from astrbot_plugin_bqyx.handlers.query import QueryHandlers
+    from astrbot_plugin_bqyx.models import UserBind
+    from astrbot_plugin_bqyx.reply import ReplyService
+
+    store = SqliteStore(tmp_path / "handler_test3.db")
+    await store.init()
+    await store.set_group_army("group_1", 101)
+    await store.set_user_bind("group_1", "qq_bound", "uid_2", 1)
+
+    mock_user = AsyncMock()
+    m1 = SimpleNamespace(
+        uid="uid_1",
+        index=0,
+        detail=SimpleNamespace(playerName="剑仙李白", conDay=500),
+        contribution=120000,
+    )
+    m2 = SimpleNamespace(
+        uid="uid_2",
+        index=1,
+        detail=SimpleNamespace(playerName="逍遥剑仙", conDay=800),
+        contribution=50000,
+    )
+    mock_user.get_members.return_value = [m1, m2]
+
+    mock_account_service = AsyncMock()
+    mock_account_service.get_user.return_value = mock_user
+
+    mock_replies = ReplyService(Path("."))
+    mock_replies.build_my_contribution_wall = AsyncMock(return_value=[SimpleNamespace(type="image")])
+
+    class FakeEvent:
+        def __init__(self):
+            self.message_str = "查贡献 剑仙"
+            self.message_obj = SimpleNamespace(message=[])
+
+        def get_group_id(self):
+            return "group_1"
+
+        def get_sender_id(self):
+            return "qq_unbound"
+
+        def plain_result(self, text: str):
+            return SimpleNamespace(type="plain", text=text)
+
+    handlers = QueryHandlers()
+    handlers.store = store
+    handlers.account = mock_account_service
+    handlers.replies = mock_replies
+
+    handlers.wait_session_reply = AsyncMock(
+        return_value=SimpleNamespace(ok=True, text="2", timed_out=False, cancelled=False)
+    )
+
+    fn = handlers.check_my_contribution_wall
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = []
+    res = fn(handlers, FakeEvent())
+    if hasattr(res, "__anext__"):
+        async for r in res:
+            results.append(r)
+    else:
+        results.append(await res)
+
+    # 包含提示消息和最后的贡献墙结果
+    assert len(results) == 2
+    prompt_text = getattr(results[0], "text", str(results[0]))
+    assert "找到多个包含「剑仙」的游戏角色" in prompt_text
+    assert "【未绑定】" in prompt_text
+    assert "剑仙李白" in prompt_text
+    assert "【已绑定】" in prompt_text
+    assert "逍遥剑仙" in prompt_text
+    assert mock_replies.build_my_contribution_wall.called
+
+
+@pytest.mark.asyncio
+async def test_check_contribution_by_name_not_found(tmp_path):
+    from astrbot_plugin_bqyx.errors import BotError
+    from astrbot_plugin_bqyx.handlers.query import QueryHandlers
+
+    store = SqliteStore(tmp_path / "handler_test4.db")
+    await store.init()
+    await store.set_group_army("group_1", 101)
+
+    mock_user = AsyncMock()
+    mock_user.get_members.return_value = []
+
+    mock_account_service = AsyncMock()
+    mock_account_service.get_user.return_value = mock_user
+
+    class FakeEvent:
+        def __init__(self):
+            self.message_str = "查贡献 查无此人"
+
+        def get_group_id(self):
+            return "group_1"
+
+        def get_sender_id(self):
+            return "qq_1"
+
+    handlers = QueryHandlers()
+    handlers.store = store
+    handlers.account = mock_account_service
+
+    fn = handlers.check_my_contribution_wall
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    with pytest.raises(BotError, match="未在本群军队中找到包含「查无此人」的成员"):
+        res = fn(handlers, FakeEvent())
+        if hasattr(res, "__anext__"):
+            async for _ in res:
+                pass
+        else:
+            await res
+

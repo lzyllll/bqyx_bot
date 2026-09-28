@@ -526,7 +526,9 @@ class ReplyService:
         title: str = "军团成员列表",
         file_prefix: str = "members",
         text_content: str | None = None,
+        text_lines: list[str] | None = None,
         uid: str | None = None,
+        image_cmd: str | None = None,
     ) -> list[MessageEventResult]:
         member_list = list(members)
         if format_type == "图片":
@@ -547,8 +549,45 @@ class ReplyService:
                 )
             ]
 
-        reply_text = (text_content or self.members_renderer.text(member_list)).strip()
-        return self.text_result(event, reply_text)
+        if text_lines is not None:
+            lines = list(text_lines)
+        elif text_content:
+            lines = text_content.splitlines()
+        else:
+            lines = []
+            for i, m in enumerate(member_list, 1):
+                p_name = (
+                    getattr(getattr(m, "detail", None), "playerName", None)
+                    or f"UID_{getattr(m, 'uid', '')}"
+                )
+                btn = md_cmd_example(p_name, f"查贡献 {p_name}")
+                con_day = (
+                    getattr(getattr(m, "detail", None), "conDay", 0)
+                    if getattr(m, "detail", None)
+                    else 0
+                )
+                contrib = getattr(m, "contribution", 0) or 0
+                lines.append(f"{i}. {btn} (日贡: {con_day:,} | 总贡: {contrib:,})")
+
+        title_text = title if "共" in title else f"{title} (共 {len(member_list)} 人)"
+        tip_lines = [f"> 💡 **{title_text}**"]
+        if lines:
+            if len(lines) == 1:
+                tip_lines.append(f"> **用法**：{lines[0]}")
+            else:
+                tip_lines.append("> \n" + "\n".join(f"> {line}" for line in lines))
+        tip_lines.append("> 点击角色名可直接调用 查贡献 查询个人日历")
+
+        full_md = "\n".join(tip_lines)
+        target_img_cmd = image_cmd
+        if not target_img_cmd and file_prefix == "members":
+            target_img_cmd = "查成员 图片"
+
+        if target_img_cmd:
+            img_btn = md_cmd_example(f"🔴 {target_img_cmd}", target_img_cmd)
+            full_md += f"\n\n{img_btn}"
+
+        return [self.markdown_result(event, full_md)]
 
     async def build_domain(
         self,
