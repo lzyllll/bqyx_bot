@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.db
+*.db-shm
+*.db-wal
+.venv/
+.env
+.pytest_cache/
+.ruff_cache/
+xlsx/
+temp_images/
+botpy.log
+*.bak*
+data/
+logs/
+test/output/
+tests/output/
+
+# Ignore config & secrets
+config.json
+**/config.json
+scripts/config.json

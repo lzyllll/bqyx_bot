@@ -1,0 +1,8 @@
+from astrbot_plugin_bqyx.models import ContributionKind
+
+
+def test_contribution_kind_defaults():
+    assert ContributionKind.DAILY.label == "今日贡献"
+    assert ContributionKind.WEEKLY.label == "本周贡献"
+    assert ContributionKind.DAILY.default_limit == 1400
+    assert ContributionKind.WEEKLY.default_limit == 9800

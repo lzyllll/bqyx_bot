@@ -1,0 +1,223 @@
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import pytest
+
+from astrbot_plugin_bqyx.models import MemberSnapshot
+from astrbot_plugin_bqyx.schedule import (
+    YesterdayScore,
+    below_limit,
+    calculate_yesterday,
+    capture_date,
+    last_sunday,
+    last_week_label,
+    last_week_range,
+    report_date,
+    snapshot_from_member,
+    this_week_label,
+    yesterday_contribution,
+)
+
+TZ = timezone(timedelta(hours=8))
+
+
+def _snap(**kwargs) -> MemberSnapshot:
+    data = dict(
+        army_id=1,
+        snapshot_date="2026-08-23",
+        uid="1",
+        arch_index=0,
+        nickname="甲",
+        contribution=10000,
+        con_day=1500,
+        this_week=4000,
+        captured_at="t",
+    )
+    data.update(kwargs)
+    return MemberSnapshot(**data)
+
+
+def test_capture_date_keeps_evening_on_same_day():
+    now = datetime(2026, 8, 23, 23, 30, tzinfo=TZ)
+    assert capture_date(now) == "2026-08-23"
+
+
+def test_capture_date_after_midnight_is_today():
+    now = datetime(2026, 8, 24, 0, 5, tzinfo=TZ)
+    assert capture_date(now) == "2026-08-24"
+
+
+def test_report_date_at_noon_is_yesterday():
+    now = datetime(2026, 8, 24, 12, 0, tzinfo=TZ)
+    assert report_date(now) == "2026-08-23"
+
+
+def test_yesterday_uses_midnight_baselines():
+    previous = _snap(contribution=10000, con_day=1500)
+    current = _snap(contribution=12100, con_day=400)
+    # (12100-400) - (10000-1500) = 11700 - 8500 = 3200
+    assert yesterday_contribution(previous, current) == 3200
+
+
+def test_calculate_yesterday_matches_uid_and_archive():
+    previous = [
+        _snap(uid="1", arch_index=0, nickname="甲", contribution=10000, con_day=1500),
+        _snap(uid="2", arch_index=1, nickname="乙", contribution=8000, con_day=200),
+    ]
+    current = [
+        _snap(uid="2", arch_index=1, nickname="乙", contribution=9000, con_day=100),
+        _snap(uid="1", arch_index=0, nickname="甲", contribution=12000, con_day=300),
+        _snap(uid="3", arch_index=0, nickname="丙", contribution=500, con_day=500),
+    ]
+    scores = calculate_yesterday(previous, current)
+    assert [item.nickname for item in scores] == ["甲", "乙"]
+    assert scores[0].yesterday == 3200
+    assert scores[1].yesterday == 1100
+
+
+def test_below_limit_uses_yesterday_score():
+    items = [
+        YesterdayScore("1", 0, "甲", 2100),
+        YesterdayScore("2", 0, "乙", 800),
+        YesterdayScore("3", 0, "丙", 1400),
+    ]
+    assert [item.nickname for item in below_limit(items, 1400)] == ["乙"]
+
+
+def test_snapshot_from_member_reads_detail():
+    member = SimpleNamespace(
+        uid="1001",
+        index=4,
+        nickname="qq名",
+        contribution=8888,
+        detail=SimpleNamespace(
+            playerName="角色名",
+            conDay=1234,
+            conObj=SimpleNamespace(this_week=5600),
+        ),
+    )
+    item = snapshot_from_member(88, "2026-08-23", member, "now")
+    assert item.army_id == 88
+    assert item.uid == "1001"
+    assert item.arch_index == 4
+    assert item.nickname == "角色名"
+    assert item.contribution == 8888
+    assert item.con_day == 1234
+    assert item.this_week == 5600
+
+
+@pytest.mark.asyncio
+async def test_capture_members_dedupes_army_per_group():
+    from astrbot_plugin_bqyx.handlers.schedule import ScheduleHandlers
+
+    writes: list[tuple[int, str, int]] = []
+
+    class FakeStore:
+        async def list_group_armies(self):
+            return [("g1", 29802), ("g2", 29802), ("g3", 1241)]
+
+        async def replace_member_snapshots(self, army_id, snapshot_date, items):
+            writes.append((army_id, snapshot_date, len(items)))
+
+    class FakeUser:
+        def __init__(self):
+            self.calls = 0
+
+        async def get_members(self, army_id):
+            self.calls += 1
+            return [
+                SimpleNamespace(
+                    uid="1001",
+                    index=0,
+                    nickname="qq名",
+                    contribution=8888,
+                    detail=SimpleNamespace(
+                        playerName="角色名",
+                        conDay=1234,
+                        conObj=SimpleNamespace(this_week=5600),
+                    ),
+                )
+            ]
+
+    fake_user = FakeUser()
+    handler = ScheduleHandlers()
+    handler.store = FakeStore()
+    handler.account = SimpleNamespace(get_user=lambda: _afake(fake_user))
+
+    await handler._capture_members()
+
+    assert fake_user.calls == 2
+    snapshot_day = capture_date()
+    assert sorted(writes) == [(1241, snapshot_day, 1), (29802, snapshot_day, 1)]
+
+
+@pytest.mark.asyncio
+async def test_daily_command_stats_prune_task_delegates_to_store():
+    from astrbot_plugin_bqyx.handlers.schedule import ScheduleHandlers
+
+    class FakeStore:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def prune_command_call_stats(self) -> int:
+            self.calls += 1
+            return 3
+
+    handler = ScheduleHandlers()
+    handler.store = FakeStore()
+
+    await handler.prune_command_call_stats()
+    assert handler.store.calls == 1
+
+
+async def _afake(user):
+    return user
+
+
+class _FakeDetail:
+    def __init__(self, con_day: int) -> None:
+        self.conDay = con_day
+
+
+class _FakeMember:
+    def __init__(self, uid: str, con_day: int) -> None:
+        self.uid = uid
+        self.detail = _FakeDetail(con_day)
+
+
+def test_apply_yesterday_to_members_overrides_con_day():
+    from astrbot_plugin_bqyx.handlers.schedule import apply_yesterday_to_members
+
+    members = [_FakeMember("1", 5), _FakeMember("2", 8)]
+    scores = [YesterdayScore("1", 0, "甲", 1400)]
+    apply_yesterday_to_members(members, scores)
+    assert members[0].detail.conDay == 1400
+    assert members[1].detail.conDay == 0
+
+
+def test_sort_members_by_yesterday_desc():
+    from astrbot_plugin_bqyx.handlers.schedule import sort_members_by_yesterday
+
+    members = [_FakeMember("1", 0), _FakeMember("2", 0), _FakeMember("3", 0)]
+    scores = [
+        YesterdayScore("2", 0, "乙", 800),
+        YesterdayScore("1", 0, "甲", 1400),
+        YesterdayScore("3", 0, "丙", 0),
+    ]
+    sort_members_by_yesterday(members, scores)
+    assert [m.uid for m in members] == ["1", "2", "3"]
+
+
+def test_last_sunday_before_monday():
+    monday = datetime(2026, 8, 24, 10, 0, tzinfo=TZ)
+    assert last_sunday(monday).isoformat() == "2026-08-23"
+    assert last_week_range(monday) == ("2026-08-16", "2026-08-23")
+    assert this_week_label(monday) == "2026-08-24 ~ 2026-08-24"
+    assert last_week_label(monday) == "2026-08-17 ~ 2026-08-23"
+
+
+def test_last_sunday_on_sunday_uses_previous_week():
+    sunday = datetime(2026, 8, 30, 15, 0, tzinfo=TZ)
+    assert last_sunday(sunday).isoformat() == "2026-08-23"
+    assert last_week_range(sunday) == ("2026-08-16", "2026-08-23")
+    assert this_week_label(sunday) == "2026-08-24 ~ 2026-08-30"

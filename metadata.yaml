@@ -1,0 +1,5 @@
+name: astrbot_plugin_bqyx
+author: lzy
+version: v1.0.0
+desc: 冰枪英雄 QQ 机器人 AstrBot 插件版，支持军团绑定、成员与战力查询、背包物品对比、实时及历史排行等 35+ 指令。
+astrbot_version: ">=4.0.0"

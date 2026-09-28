@@ -1,0 +1,32 @@
+{
+  "username": {
+    "type": "string",
+    "description": "4399 账号",
+    "hint": "用于调用 4399 API 查询军团、战力及背包数据的账号",
+    "default": ""
+  },
+  "password": {
+    "type": "string",
+    "description": "4399 密码",
+    "hint": "对应 4399 账号的登录密码",
+    "default": ""
+  },
+  "arch_index": {
+    "type": "int",
+    "description": "默认存档槽位",
+    "hint": "游戏存档序号，通常为 0，如有多个角色可在此调整默认序号",
+    "default": 0
+  },
+  "snapshot_retention_days": {
+    "type": "int",
+    "description": "成员快照保留天数",
+    "hint": "历史成员贡献快照数据的最长保留天数，默认 63 天，填 0 表示永久保留",
+    "default": 63
+  },
+  "union_snapshot_retention_days": {
+    "type": "int",
+    "description": "军团快照保留天数",
+    "hint": "历史军团排行快照数据的最长保留天数，默认 15 天，填 0 表示永久保留",
+    "default": 15
+  }
+}

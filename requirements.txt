@@ -1,0 +1,12 @@
+rapidfuzz>=3.0.0
+scipy>=1.11.0
+sympy>=1.12
+pyautogui>=0.9.54
+pyperclip>=1.9.0
+ddddocr==1.5.6
+py3amf>=0.8.12
+javascript
+thriftpy2>=0.5.3
+playwright>=1.40.0
+python-dotenv>=1.0.1
+apscheduler>=3.11.0

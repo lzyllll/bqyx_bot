@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./lib/bqyx_api"
+    ],
+    "python-envs.defaultEnvManager": "ms-python.python:system"
+}
