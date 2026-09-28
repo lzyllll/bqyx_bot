@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from astrbot.api.event import AstrMessageEvent
-from astrbot.core.utils.session_waiter import SessionController, session_waiter
+from astrbot.core.star.filter.custom_filter import CustomFilter
 from bqyx_api.api import GameUser
 from bqyx_api.archive import DemonWeekService
 from bqyx_api.archive.player.service import PlayerBonusService
@@ -28,6 +29,25 @@ class SessionResult:
     cancelled: bool = False
 
 
+def clean_reply_text(raw_text: str) -> str:
+    """清理用户回复内容，剥离 [At:xxx] 标签、提及前缀以及首尾杂质字符。"""
+    if not raw_text:
+        return ""
+    text = re.sub(r"\[At:[^\]]+\]", "", raw_text)
+    text = re.sub(r"^@\S+\s*", "", text.strip())
+    text = text.strip().lstrip("/#")
+    return text.strip()
+
+
+class PendingSessionFilter(CustomFilter):
+    """过滤属于当前等待会话的消息。仅当 (group_id, sender_id) 存在待决会话时放行。"""
+
+    def filter(self, event: AstrMessageEvent, cfg: Any = None) -> bool:
+        group_id = str(event.get_group_id() or "")
+        sender_id = str(event.get_sender_id() or "")
+        return (group_id, sender_id) in BqyxServices._pending_sessions
+
+
 class BqyxServices:
     """插件运行时依赖，给 handler mixin 提供类型提示与公共服务。"""
 
@@ -39,6 +59,9 @@ class BqyxServices:
     player_bonus: PlayerBonusService
     union_defines: UnionDefineService
     demon_week: DemonWeekService
+
+    # 存储处于等待输入状态的会话：(group_id, sender_id) -> Future[AstrMessageEvent]
+    _pending_sessions: dict[tuple[str, str], asyncio.Future[AstrMessageEvent]] = {}
 
     def __getattr__(self, name: str) -> Any:
         if name == "replies":
@@ -67,31 +90,36 @@ class BqyxServices:
         timeout: float | None = None,
         cancel_words: list[str] | None = None,
     ) -> SessionResult:
+        group_id = str(event.get_group_id() or "")
+        sender_id = str(event.get_sender_id() or "")
+        session_key = (group_id, sender_id)
+
         cancel_set = set(cancel_words or ["取消", "退出", "q", "Q"])
-        wait_timeout = int(timeout or 30)
-        future: asyncio.Future[SessionResult] = asyncio.Future()
+        wait_timeout = float(timeout or 30)
 
-        @session_waiter(timeout=wait_timeout)
-        async def session_handler(
-            controller: SessionController, next_event: AstrMessageEvent
-        ) -> None:
-            text = (next_event.message_str or "").strip()
-            if text in cancel_set:
-                controller.stop()
-                if not future.done():
-                    future.set_result(SessionResult(ok=False, cancelled=True))
-                return
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[AstrMessageEvent] = loop.create_future()
 
-            controller.stop()
-            if not future.done():
-                future.set_result(SessionResult(ok=True, text=text))
+        # 如果同一用户已有未结束的等待会话，先取消旧的
+        old_fut = self._pending_sessions.get(session_key)
+        if old_fut and not old_fut.done():
+            old_fut.cancel()
+
+        self._pending_sessions[session_key] = future
 
         try:
-            await session_handler(event)
-            if future.done():
-                return future.result()
+            next_event = await asyncio.wait_for(future, timeout=wait_timeout)
+            raw = (next_event.message_str or "").strip()
+            text = clean_reply_text(raw)
+            if text in cancel_set:
+                return SessionResult(ok=False, cancelled=True)
+            return SessionResult(ok=True, text=text)
+        except (asyncio.TimeoutError, TimeoutError):
             return SessionResult(ok=False, timed_out=True)
-        except TimeoutError:
-            return SessionResult(ok=False, timed_out=True)
+        except asyncio.CancelledError:
+            return SessionResult(ok=False, cancelled=True)
         except Exception as exc:
             return SessionResult(ok=False, text=str(exc))
+        finally:
+            if self._pending_sessions.get(session_key) is future:
+                self._pending_sessions.pop(session_key, None)

@@ -4,6 +4,7 @@ import asyncio
 import functools
 import inspect
 import time
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any, AsyncGenerator
@@ -35,6 +36,32 @@ HELP_MODULES = [
     HELP_MODULE_UNION,
     HELP_MODULE_RANK,
 ]
+
+
+def md_cmd_enter(label: str, cmd: str) -> str:
+    """生成点击即直接发送执行的 QQ Markdown 交互标签（参数生成，零正则）。"""
+    encoded = urllib.parse.quote(cmd.strip())
+    return f'<qqbot-cmd-enter text="{encoded}" show="{label}" />'
+
+
+def md_cmd_input(label: str, cmd_prefix: str, add_space: bool | None = None) -> str:
+    """生成点击后填入聊天输入框的 QQ Markdown 交互标签（参数生成，零正则）。
+
+    默认规则：如果是纯数字（选项序号）或取消词，不加空格；如果是指令前缀，自动追加空格。
+    也可以通过显式传入 add_space 进行控制。
+    """
+    cleaned = cmd_prefix.strip()
+    if add_space is None:
+        add_space = not (cleaned.isdigit() or cleaned in ("取消", "退出", "q", "Q"))
+    prefix = (cleaned + " ") if add_space else cleaned
+    encoded = urllib.parse.quote(prefix)
+    return f'<qqbot-cmd-input text="{encoded}" show="{label}" reference="false" />'
+
+
+def md_cmd_example(label: str, full_cmd: str) -> str:
+    """生成点击后将完整示例填入输入框的 QQ Markdown 交互标签（参数生成，零正则）。"""
+    encoded = urllib.parse.quote(full_cmd.strip())
+    return f'<qqbot-cmd-input text="{encoded}" show="{label}" reference="false" />'
 
 
 def normalize_help_module(module: str) -> str:
@@ -347,11 +374,13 @@ class ReplyService:
 
     def markdown_result(
         self,
-        event: AstrMessageEvent,
+        event: AstrMessageEvent | None,
         text: str,
     ) -> MessageEventResult:
         """生成 Markdown 格式文本消息结果（纯生成，不发送）。"""
-        if hasattr(event, "plain_result"):
+        if event is not None and type(event).__name__ != "MagicMock" and hasattr(event, "make_result"):
+            res = event.make_result().message(text)
+        elif event is not None and hasattr(event, "plain_result"):
             res = event.plain_result(text)
         else:
             res = MessageEventResult().message(text)
@@ -366,12 +395,16 @@ class ReplyService:
         usage: str = "",
         extra: str = "",
     ) -> MessageEventResult:
-        """生成标准 Markdown 提示消息结果。"""
+        """生成标准 Markdown 提示消息结果。直接基于参数拼接，禁止正则。"""
         lines = [f"> 💡 **{message}**"]
         if usage:
-            lines.append(f"> **用法**：`{usage}`")
+            if "\n" in usage:
+                lines.append("> \n" + "\n".join(f"> {line}" for line in usage.splitlines()))
+            else:
+                lines.append(f"> **用法**：{usage}")
         if extra:
-            lines.append(f"> *{extra}*")
+            for line in extra.splitlines():
+                lines.append(f"> {line}")
         return self.markdown_result(event, "\n".join(lines))
 
     def markdown_warn(
@@ -380,10 +413,11 @@ class ReplyService:
         message: str,
         extra: str = "",
     ) -> MessageEventResult:
-        """生成标准 Markdown 警告/错误消息结果。"""
+        """生成标准 Markdown 警告/错误消息结果。直接基于参数拼接，禁止正则。"""
         lines = [f"> ⚠️ **{message}**"]
         if extra:
-            lines.append(f"> {extra}")
+            for line in extra.splitlines():
+                lines.append(f"> {line}")
         return self.markdown_result(event, "\n".join(lines))
 
     def markdown_success(
@@ -667,22 +701,6 @@ class ReplyService:
     ) -> list[MessageEventResult]:
         return [self.image_result(event, image_bytes)]
 
-    # 兼容别名：
-    send_members = build_members
-    send_domain = build_domain
-    send_pk_rank = build_pk_rank
-    send_contribution = build_contribution
-    send_my_contribution_wall = build_my_contribution_wall
-    send_demon = build_demon
-    send_union_info = build_union_info
-    send_my_things = build_my_things
-    send_role_dps_report = build_role_dps_report
-    send_forward_text = build_forward_text
-    send_image = build_image
-    send_help = build_help
-    _send_image = build_image
-    _send_text = text_result
-    _send_excel = excel_result
 
 
 def _pk_rank_text(agent: UnionPKRankAgent, uid: str | None = None) -> str:

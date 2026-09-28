@@ -3,9 +3,10 @@ from __future__ import annotations
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..context import BqyxServices
-from ..errors import BotError
+from ..errors import BotError, GroupOnlyError, ParamError
 from ..hooks import command_rate_limit, error_reply
 from ..parsing import extract_at
+from ..reply import md_cmd_input
 
 
 class ExcludeHandlers(BqyxServices):
@@ -15,18 +16,16 @@ class ExcludeHandlers(BqyxServices):
     async def add_exclude_at(self, event: AstrMessageEvent, target: str = ""):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         target_at = extract_at(event, target)
         target_qq = target_at.user_id if target_at else target.strip().lstrip("@")
         if not target_qq or not target_qq.isdigit():
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/免at添加", "免at添加")
+            raise ParamError(
                 "请 @ 要添加的群成员或输入 QQ 号",
-                "/免at添加 @成员 或 /免at添加 <QQ号>",
+                usage=f"{tag} @成员 或 {tag} <QQ号>",
             )
-            return
 
         added = await self.store.add_exclude(group_id, target_qq)
         if added:
@@ -42,18 +41,16 @@ class ExcludeHandlers(BqyxServices):
     ):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         target_at = extract_at(event, target)
         target_qq = target_at.user_id if target_at else target.strip().lstrip("@")
         if not target_qq or not target_qq.isdigit():
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/免at删除", "免at删除")
+            raise ParamError(
                 "请 @ 要移除的群成员或输入 QQ 号",
-                "/免at删除 @成员 或 /免at删除 <QQ号>",
+                usage=f"{tag} @成员 或 {tag} <QQ号>",
             )
-            return
 
         removed = await self.store.remove_exclude(group_id, target_qq)
         if removed:
@@ -67,8 +64,7 @@ class ExcludeHandlers(BqyxServices):
     async def list_exclude_at(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         exclude_list = await self.store.list_exclude(group_id)
         if not exclude_list:

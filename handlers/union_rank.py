@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..context import BqyxServices
-from ..errors import BotError
+from ..errors import ArmyNotBoundError, BotError, GroupOnlyError
 from ..hooks import (
     error_reply,
     last_week_union_limit,
@@ -197,38 +197,23 @@ def _fmt_local(iso_utc: str) -> str:
 
 
 class UnionRankHandlers(BqyxServices):
+    @filter.command("昨日日贡排行", alias={"昨日贡献排行"})
     @error_reply
     @yesterday_union_limit
-    @filter.command("昨日日贡排行", alias={"昨日贡献排行"})
     async def yesterday_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         day = report_date()
         snapshots = await self.store.list_union_snapshots(day)
         if not snapshots:
-            yield self.replies.markdown_warn(
-                event,
-                f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。",
-            )
-            return
+            raise BotError(f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。")
         if all(item.today_contribution is None for item in snapshots):
-            yield self.replies.markdown_warn(
-                event,
-                f"没有 {day} 的前一天军队排行快照，昨日日贡暂无法计算，请等今晚采集后再试。",
-            )
-            return
+            raise BotError(f"没有 {day} 的前一天军队排行快照，昨日日贡暂无法计算，请等今晚采集后再试。")
         spec = parse_rank_range(event.message_str)
         center_rank, window = resolve_rank_spec(spec, len(snapshots))
         rows, highlight = _rank_rows(
@@ -239,11 +224,9 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            yield self.replies.markdown_warn(event, "指定的排行范围无效。")
-            return
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            yield self.replies.markdown_warn(event, "本群军队不在前 1000 排行中。")
-            return
+            raise BotError("本群军队不在前 1000 排行中。")
         await self._with_member_change(rows)
         yield await self._send_rank(
             event,
@@ -253,24 +236,17 @@ class UnionRankHandlers(BqyxServices):
             captured_at=snapshots[0].captured_at,
         )
 
+    @filter.command("今日日贡排行", alias={"今日贡献排行"})
     @error_reply
     @union_live_limit
-    @filter.command("今日日贡排行", alias={"今日贡献排行"})
     async def today_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         day = report_date()
         prev_map = {
@@ -278,16 +254,11 @@ class UnionRankHandlers(BqyxServices):
             for item in await self.store.list_union_snapshots(day)
         }
         if not prev_map:
-            yield self.replies.markdown_warn(
-                event,
-                f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。",
-            )
-            return
+            raise BotError(f"还没有 {day} 的军队排行快照，请等今晚 23:59 采集后再试。")
 
         unions = await fetch_union_rank(user)
         if not unions:
-            yield self.replies.markdown_warn(event, "获取军队排行失败，请稍后再试。")
-            return
+            raise BotError("获取军队排行失败，请稍后再试。")
         captured_at = datetime.now(timezone.utc).isoformat()
         items = []
         for union in unions:
@@ -321,11 +292,9 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            yield self.replies.markdown_warn(event, "指定的排行范围无效。")
-            return
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            yield self.replies.markdown_warn(event, "本群军队不在前 1000 排行中。")
-            return
+            raise BotError("本群军队不在前 1000 排行中。")
         for row in rows:
             prev = prev_map.get(int(row["union_id"]))
             row["member_change"] = _member_change(row["members_num"], prev)
@@ -337,24 +306,17 @@ class UnionRankHandlers(BqyxServices):
             captured_at=captured_at,
         )
 
+    @filter.command("实时军队排行", alias={"军队排行"})
     @error_reply
     @total_union_limit
-    @filter.command("实时军队排行", alias={"军队排行"})
     async def union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         day = report_date()
         spec = parse_rank_range(event.message_str)
@@ -363,8 +325,7 @@ class UnionRankHandlers(BqyxServices):
             user, day, spec, army_id, cache
         )
         if not snapshots:
-            yield self.replies.markdown_warn(event, "获取军队排行失败，请稍后再试。")
-            return
+            raise BotError("获取军队排行失败，请稍后再试。")
         center_rank, window = resolve_rank_spec(spec, len(snapshots))
         rows, highlight = _rank_rows(
             snapshots,
@@ -374,11 +335,9 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            yield self.replies.markdown_warn(event, "指定的排行范围无效。")
-            return
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            yield self.replies.markdown_warn(event, "本群军队不在前 1000 排行中。")
-            return
+            raise BotError("本群军队不在前 1000 排行中。")
         await self._with_member_change(rows)
         prev_map = {item.union_id: item for item in cache}
         for row in rows:
@@ -395,37 +354,25 @@ class UnionRankHandlers(BqyxServices):
             show_daily=False,
         )
 
+    @filter.command("本周周贡排行", alias={"本周周贡"})
     @error_reply
     @this_week_union_limit
-    @filter.command("本周周贡排行", alias={"本周周贡"})
     async def this_week_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         baseline_day = last_sunday().isoformat()
         prev_items = await self.store.list_union_snapshots(baseline_day)
         if not prev_items:
-            yield self.replies.markdown_warn(
-                event,
-                f"还没有 {baseline_day} 的军队排行快照，无法计算本周周贡，请等采集满一周后再试。",
-            )
-            return
+            raise BotError(f"还没有 {baseline_day} 的军队排行快照，无法计算本周周贡，请等采集满一周后再试。")
         unions = await fetch_union_rank(user)
         if not unions:
-            yield self.replies.markdown_warn(event, "获取军队排行失败，请稍后再试。")
-            return
+            raise BotError("获取军队排行失败，请稍后再试。")
         captured_at = datetime.now(timezone.utc).isoformat()
         live_items = snapshots_from_unions(
             unions,
@@ -450,39 +397,24 @@ class UnionRankHandlers(BqyxServices):
             ),
         )
 
+    @filter.command("上周周贡排行", alias={"上周周贡"})
     @error_reply
     @last_week_union_limit
-    @filter.command("上周周贡排行", alias={"上周周贡"})
     async def last_week_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         start_day, end_day = last_week_range()
         end_items = await self.store.list_union_snapshots(end_day)
         if not end_items:
-            yield self.replies.markdown_warn(
-                event,
-                f"还没有 {end_day} 的军队排行快照，无法计算上周周贡，请等采集满一周后再试。",
-            )
-            return
+            raise BotError(f"还没有 {end_day} 的军队排行快照，无法计算上周周贡，请等采集满一周后再试。")
         start_items = await self.store.list_union_snapshots(start_day)
         if not start_items:
-            yield self.replies.markdown_warn(
-                event,
-                f"还没有 {start_day} 的军队排行快照，无法计算上周周贡，请等采集满两周后再试。",
-            )
-            return
+            raise BotError(f"还没有 {start_day} 的军队排行快照，无法计算上周周贡，请等采集满两周后再试。")
         items = apply_weekly_contribution(
             end_items,
             {item.union_id: item for item in start_items},
@@ -515,7 +447,7 @@ class UnionRankHandlers(BqyxServices):
         missing_baseline_message: str,
     ) -> MessageEventResult:
         if all(item.today_contribution is None for item in items):
-            return self.replies.markdown_warn(event, missing_baseline_message)
+            raise BotError(missing_baseline_message)
         center_rank, window = resolve_rank_spec(spec, len(items))
         rows, highlight = _rank_rows(
             items,
@@ -525,9 +457,9 @@ class UnionRankHandlers(BqyxServices):
             center_rank=center_rank,
         )
         if not rows:
-            return self.replies.markdown_warn(event, "指定的排行范围无效。")
+            raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            return self.replies.markdown_warn(event, "本群军队不在前 1000 排行中。")
+            raise BotError("本群军队不在前 1000 排行中。")
         await self._with_member_change(rows, prev_day=member_prev_day)
         return await self._send_rank(
             event,

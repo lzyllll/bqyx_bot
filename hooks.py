@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Any, TypeVar
 
 from astrbot.api.event import AstrMessageEvent, MessageChain
-from .errors import BotError
+from .errors import BotError, bqyx_error_to_bot_error
 
 LOG = logging.getLogger("astrbot_plugin_bqyx.hooks")
 
@@ -16,18 +16,31 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def _format_error(error: BaseException) -> str:
-    if isinstance(error, BotError):
-        return str(error)
+    bot_err = bqyx_error_to_bot_error(error) or (error if isinstance(error, BotError) else None)
+    if bot_err is not None:
+        return str(bot_err)
     detail = str(error).strip() or repr(error)
     return f"操作失败，原因：{type(error).__name__}: {detail}"
 
 
 def _find_event(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any | None:
     for item in args:
-        if isinstance(item, AstrMessageEvent) or callable(getattr(item, "send", None)) or callable(getattr(item, "reply", None)):
+        if (
+            isinstance(item, AstrMessageEvent)
+            or callable(getattr(item, "send", None))
+            or callable(getattr(item, "reply", None))
+            or callable(getattr(item, "plain_result", None))
+            or callable(getattr(item, "make_result", None))
+        ):
             return item
     event = kwargs.get("event")
-    if event is not None and (isinstance(event, AstrMessageEvent) or callable(getattr(event, "send", None)) or callable(getattr(event, "reply", None))):
+    if event is not None and (
+        isinstance(event, AstrMessageEvent)
+        or callable(getattr(event, "send", None))
+        or callable(getattr(event, "reply", None))
+        or callable(getattr(event, "plain_result", None))
+        or callable(getattr(event, "make_result", None))
+    ):
         return event
     return None
 
@@ -66,6 +79,55 @@ async def _record_command_call(args: tuple[Any, ...], command_name: str) -> None
 import inspect
 
 
+def format_error_markdown(error: BaseException) -> str:
+    """将异常转换为标准 Markdown 格式文本，直接根据参数生成，禁止正则。"""
+    bot_err = bqyx_error_to_bot_error(error) or (error if isinstance(error, BotError) else None)
+    if bot_err is not None:
+        return bot_err.format_markdown()
+
+    detail = str(error).strip() or repr(error)
+    lines = [
+        "> ⚠️ **操作执行失败**",
+        f"> 原因：`{type(error).__name__}`: {detail}",
+    ]
+    return "\n".join(lines)
+
+
+_format_error = format_error_markdown
+
+
+def build_error_result(event: Any, error: BaseException) -> Any:
+    """生成带有 use_markdown(True) 的 MessageEventResult / MessageChain。"""
+    bot_err = bqyx_error_to_bot_error(error) or (error if isinstance(error, BotError) else None)
+    target_err = bot_err if bot_err is not None else error
+    md_text = format_error_markdown(target_err)
+    if hasattr(event, "make_result"):
+        res = event.make_result().message(md_text)
+    elif hasattr(event, "plain_result"):
+        res = event.plain_result(md_text)
+    else:
+        res = MessageChain().message(md_text)
+    if hasattr(res, "use_markdown"):
+        res.use_markdown(True)
+    return res
+
+
+_format_error_result = build_error_result
+
+
+async def _dispatch_error(event: Any, error: BaseException) -> None:
+    """向消息平台发送异常消息。支持优先使用 send 发送 Markdown，退化使用 reply。"""
+    res = build_error_result(event, error)
+    if hasattr(event, "send") and callable(event.send):
+        await event.send(res)
+    elif hasattr(event, "reply") and callable(event.reply):
+        if isinstance(error, BotError):
+            await event.reply(str(error))
+        else:
+            detail = str(error).strip() or repr(error)
+            await event.reply(f"操作失败，原因：{type(error).__name__}: {detail}")
+
+
 def error_reply(func: F) -> F:
     """捕获 handler 异常，回复给群（同时支持普通协程与异步生成器）。"""
 
@@ -76,16 +138,19 @@ def error_reply(func: F) -> F:
                 async for item in func(*args, **kwargs):
                     yield item
             except Exception as exc:
-                text = _format_error(exc)
-                if not isinstance(exc, BotError):
+                bot_err = bqyx_error_to_bot_error(exc) or (exc if isinstance(exc, BotError) else None)
+                if bot_err is not None and getattr(bot_err, "is_expected", True):
+                    LOG.info("用户指令/业务提示 [%s]: %s", type(bot_err).__name__, bot_err.message)
+                else:
                     LOG.exception("handler error: %s", exc)
                 event = _find_event(args, kwargs)
                 if event is not None:
-                    if hasattr(event, "plain_result"):
-                        yield event.plain_result(text)
+                    target_err = bot_err if bot_err is not None else exc
+                    if hasattr(event, "make_result") or hasattr(event, "plain_result"):
+                        yield build_error_result(event, target_err)
                     else:
                         try:
-                            await _send_reply(event, text)
+                            await _dispatch_error(event, target_err)
                         except Exception:
                             LOG.exception("发送错误回复失败")
 
@@ -96,15 +161,18 @@ def error_reply(func: F) -> F:
         try:
             return await func(*args, **kwargs)
         except Exception as exc:
-            text = _format_error(exc)
-            if not isinstance(exc, BotError):
+            bot_err = bqyx_error_to_bot_error(exc) or (exc if isinstance(exc, BotError) else None)
+            if bot_err is not None and getattr(bot_err, "is_expected", True):
+                LOG.info("用户指令/业务提示 [%s]: %s", type(bot_err).__name__, bot_err.message)
+            else:
                 LOG.exception("handler error: %s", exc)
             event = _find_event(args, kwargs)
             if event is None:
                 LOG.exception("handler error 但找不到 event: %s", exc)
                 return None
+            target_err = bot_err if bot_err is not None else exc
             try:
-                await _send_reply(event, text)
+                await _dispatch_error(event, target_err)
             except Exception:
                 LOG.exception("发送错误回复失败")
             return None

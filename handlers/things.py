@@ -4,7 +4,7 @@ from astrbot.api.event import AstrMessageEvent, filter
 from bqyx_api.archive.things import ThingsDiff
 
 from ..context import BqyxServices
-from ..errors import BotError, UserNotBoundError
+from ..errors import BotError, GroupOnlyError, UserNotBoundError
 from ..hooks import command_rate_limit, error_reply
 from ..parsing import extract_at
 
@@ -25,26 +25,15 @@ class ThingsHandlers(BqyxServices):
     ) -> None:
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         target_at = extract_at(event, target)
         qq_id = str(target_at.user_id if target_at else event.get_sender_id())
         bind = await self.store.get_user_bind(group_id, qq_id)
         if not bind:
             if target_at is None:
-                yield self.replies.markdown_tip(
-                    event,
-                    "你尚未在本群绑定游戏角色",
-                    "/绑定游戏名 <角色名> 或 /绑定uid <UID>",
-                    "例如：/绑定游戏名 张三",
-                )
-            else:
-                yield self.replies.markdown_warn(
-                    event,
-                    "被 @ 的用户尚未在本群绑定游戏账号。",
-                )
-            return
+                raise UserNotBoundError()
+            raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
 
         user = await self.account.get_user()
         result = await self.things.capture_for(user, bind.uid, bind.arch_index)

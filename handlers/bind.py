@@ -5,8 +5,17 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, filter
 from bqyx_api.archive.union import UnionSave
-from ..context import BqyxServices
-from ..errors import BotError
+from ..context import BqyxServices, PendingSessionFilter
+from ..errors import (
+    ArmyNotBoundError,
+    ArmyNotFoundError,
+    BotError,
+    GroupOnlyError,
+    ParamError,
+    UserNotBoundError,
+    bqyx_error_to_bot_error,
+    to_bot_error,
+)
 from ..hooks import command_rate_limit, error_reply, my_info_limit
 from ..parsing import (
     extract_command_arg,
@@ -14,6 +23,7 @@ from ..parsing import (
     parse_choice_index,
     parse_format,
 )
+from ..reply import md_cmd_example, md_cmd_input
 
 
 def pick_member_for_uid(members: Any, uid: str) -> Any:
@@ -28,134 +38,135 @@ def pick_member_for_uid(members: Any, uid: str) -> Any:
 
 
 class BindHandlers(BqyxServices):
-    @filter.command("绑定军队", alias={"绑定"})
+    @filter.custom_filter(PendingSessionFilter, priority=10000)
+    async def handle_pending_session_reply(self, event: AstrMessageEvent) -> None:
+        group_id = str(event.get_group_id() or "")
+        sender_id = str(event.get_sender_id() or "")
+        session_key = (group_id, sender_id)
+        future = self._pending_sessions.get(session_key)
+        if future is not None and not future.done():
+            future.set_result(event)
+            event.stop_event()
+
+    @filter.command("绑定军队")
+    @error_reply
     async def bind_army(self, event: AstrMessageEvent, army_id: str = ""):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         clean_army_id = extract_command_arg(
-            army_id, event, ("绑定军队", "绑定")
+            army_id, event, ("绑定军队",)
         ).strip()
         if not clean_army_id:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/绑定军队", "绑定军队")
+            ex = md_cmd_example("/绑定军队 26490", "绑定军队 26490")
+            tag_name = md_cmd_input("/绑定游戏名", "绑定游戏名")
+            tag_uid = md_cmd_input("/绑定uid", "绑定uid")
+            raise ParamError(
                 "请输入军队ID",
-                "/绑定军队 <军队ID>",
-                "例如：/绑定军队 26490；如需绑定个人账号或角色，请使用 /绑定游戏名 或 /绑定uid",
+                usage=f"{tag} `<军队ID>`",
+                extra=f"例如：{ex}；如需绑定个人账号或角色，请使用 {tag_name} 或 {tag_uid}",
             )
-            return
 
         if not clean_army_id.isdigit():
-            yield self.replies.markdown_warn(
-                event,
-                "军队ID格式错误：请输入纯数字，例如 /绑定军队 26490",
+            raise ParamError(
+                "军队ID格式错误：请输入纯数字",
+                usage="/绑定军队 <军队ID>",
+                extra="例如：/绑定军队 26490",
             )
-            return
 
         target_army_id = int(clean_army_id)
+        user = await self.account.get_user()
         try:
-            user = await self.account.get_user()
             union = await user.get_union_info(target_army_id)
-            if not union:
-                yield self.replies.markdown_warn(
-                    event,
-                    f"未查询到军队 ID {target_army_id} 的信息，请确认军队ID是否正确。",
-                )
-                return
-            army_name = (
-                getattr(union, "title", None)
-                or getattr(union, "nickname", None)
-                or getattr(union, "name", None)
-                or str(target_army_id)
-            )
-            await self.store.set_group_army(group_id, target_army_id)
-            yield self.replies.markdown_success(
-                event,
-                f"本群已成功绑定军队: {army_name} ({target_army_id})",
-            )
         except Exception as e:
-            logger.exception("绑定军队失败")
-            yield self.replies.markdown_warn(event, f"绑定军队失败：{str(e)}")
+            bot_err = to_bot_error(e, army_id=target_army_id)
+            if bot_err:
+                raise bot_err
+            raise BotError(f"绑定军队失败：{str(e)}")
 
+        if not union:
+            raise ArmyNotFoundError(target_army_id)
+
+        army_name = (
+            getattr(union, "title", None)
+            or getattr(union, "nickname", None)
+            or getattr(union, "name", None)
+            or str(target_army_id)
+        )
+        await self.store.set_group_army(group_id, target_army_id)
+        yield self.replies.markdown_success(
+            event,
+            f"本群已成功绑定军队: {army_name} ({target_army_id})",
+        )
+
+    @filter.command("绑定uid")
     @error_reply
     @command_rate_limit(name="绑定uid")
-    @filter.command("绑定uid")
     async def bind_uid(self, event: AstrMessageEvent, uid: str = ""):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         resolved_uid = extract_uid(uid) or extract_uid(event.message_str)
         if not resolved_uid:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/绑定uid", "绑定uid")
+            raise ParamError(
                 "请提供有效的游戏 UID",
-                "/绑定uid <UID>",
-                "例如 123456 或 123456_1",
+                usage=f"{tag} `<UID>`",
+                extra="例如 123456 或 123456_1",
             )
-            return
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
-        members = await user.get_members(army_id)
+        try:
+            members = await user.get_members(army_id)
+        except Exception as exc:
+            detail = str(exc).strip()
+            raise BotError(f"获取本群军队成员失败：{detail or type(exc).__name__}")
+
         member = pick_member_for_uid(members, resolved_uid)
         if member is None:
-            yield self.replies.markdown_warn(
-                event,
-                f"未在本群军队中找到该成员，请确认 UID（{resolved_uid}）或先绑定正确军队。",
-            )
-            return
+            raise BotError("未在本群军队中找到该成员，请确认 UID 或先绑定正确军队。")
 
+        player_name = member.detail.playerName or ""
         qq_id = str(event.get_sender_id() or "")
         await self.store.set_user_bind(group_id, qq_id, resolved_uid, int(member.index))
-        player_name = getattr(getattr(member, "detail", None), "playerName", None) or resolved_uid
+        details = [f"UID: `{resolved_uid}`", f"存档: `{member.index}`"]
+        if player_name:
+            details.append(f"角色: `{player_name}`")
         yield self.replies.markdown_success(
             event,
-            f"QQ {qq_id} 已成功绑定游戏角色：{player_name}",
-            [f"UID: `{resolved_uid}`", f"存档: `{member.index}`"],
+            f"QQ {qq_id} 已成功绑定游戏角色",
+            details,
         )
 
+    @filter.command("绑定账号", alias={"绑定用户名"})
     @error_reply
     @command_rate_limit(name="绑定账号")
-    @filter.command("绑定账号", alias={"绑定用户名"})
     async def bind_account(self, event: AstrMessageEvent, username: str = ""):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         clean_username = extract_command_arg(
             username, event, ("绑定账号", "绑定用户名")
         )
         if not clean_username:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/绑定账号", "绑定账号")
+            ex = md_cmd_example("/绑定账号 my_user", "绑定账号 my_user")
+            raise ParamError(
                 "请输入 4399 账号名",
-                "/绑定账号 <账号>",
-                "例如：/绑定账号 my_4399_name",
+                usage=f"{tag} `<账号>`",
+                extra=f"例如：{ex}",
             )
-            return
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         try:
             uid = str(await user.get_uid_by_username(clean_username)).strip()
@@ -164,40 +175,21 @@ class BindHandlers(BqyxServices):
         except Exception as exc:
             detail = str(exc).strip()
             if "未能获取到有效的 UID" in detail or "用户名" in detail:
-                yield self.replies.markdown_warn(
-                    event,
-                    f"找不到账号「{clean_username}」，请确认 4399 用户名是否正确。",
-                )
-                return
-            yield self.replies.markdown_warn(
-                event, f"查询账号失败：{detail or type(exc).__name__}"
-            )
-            return
+                raise BotError(f"找不到账号「{clean_username}」，请确认 4399 用户名是否正确。")
+            raise BotError(f"查询账号失败：{detail or type(exc).__name__}")
 
         if not uid.isdigit() or uid == "0":
-            yield self.replies.markdown_warn(
-                event,
-                f"找不到账号「{clean_username}」，请确认 4399 用户名是否正确。",
-            )
-            return
+            raise BotError(f"找不到账号「{clean_username}」，请确认 4399 用户名是否正确。")
 
         try:
             members = await user.get_members(army_id)
         except Exception as exc:
             detail = str(exc).strip()
-            yield self.replies.markdown_warn(
-                event,
-                f"获取本群军队成员失败：{detail or type(exc).__name__}",
-            )
-            return
+            raise BotError(f"获取本群军队成员失败：{detail or type(exc).__name__}")
 
         member = pick_member_for_uid(members, uid)
         if member is None:
-            yield self.replies.markdown_warn(
-                event,
-                f"账号「{clean_username}」不在本群绑定的军队中，请确认账号或先绑定正确军队。",
-            )
-            return
+            raise BotError(f"账号「{clean_username}」不在本群绑定的军队中，请确认账号或先绑定正确军队。")
 
         player_name = member.detail.playerName or ""
         qq_id = str(event.get_sender_id() or "")
@@ -211,46 +203,35 @@ class BindHandlers(BqyxServices):
             details,
         )
 
+    @filter.command("绑定游戏名", alias={"绑定角色名", "绑定角色"})
     @error_reply
     @command_rate_limit(name="绑定游戏名")
-    @filter.command("绑定游戏名", alias={"绑定角色名", "绑定角色"})
     async def bind_game_name(self, event: AstrMessageEvent, name: str = ""):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         target_name = extract_command_arg(
             name, event, ("绑定游戏名", "绑定角色名", "绑定角色")
         )
         if not target_name:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/绑定游戏名", "绑定游戏名")
+            ex = md_cmd_example("/绑定游戏名 张三", "绑定游戏名 张三")
+            raise ParamError(
                 "请输入要绑定的游戏角色名",
-                "/绑定游戏名 <角色名>",
-                "例如：/绑定游戏名 张三（支持模糊匹配）",
+                usage=f"{tag} `<角色名>`",
+                extra=f"例如：{ex}（支持模糊匹配）",
             )
-            return
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         try:
             raw_members = await user.get_members(army_id)
         except Exception as exc:
             detail = str(exc).strip()
-            yield self.replies.markdown_warn(
-                event,
-                f"获取本群军队成员失败：{detail or type(exc).__name__}",
-            )
-            return
+            raise BotError(f"获取本群军队成员失败：{detail or type(exc).__name__}")
 
         target_lower = target_name.lower()
         matches = [
@@ -260,11 +241,7 @@ class BindHandlers(BqyxServices):
         ]
 
         if not matches:
-            yield self.replies.markdown_warn(
-                event,
-                f"未在本群军队中找到包含「{target_name}」的成员。",
-            )
-            return
+            raise BotError(f"未在本群军队中找到包含「{target_name}」的成员。")
 
         sender_id = str(event.get_sender_id() or "")
         if len(matches) == 1:
@@ -281,15 +258,16 @@ class BindHandlers(BqyxServices):
             return
 
         lines = [
-            f"{i}. {m.detail.playerName} (总贡献: {m.contribution:,})"
+            f"{i}. {md_cmd_input(m.detail.playerName or target_name, str(i))} (总贡献: {m.contribution:,})"
             for i, m in enumerate(matches, 1)
         ]
 
+        cancel_btn = md_cmd_input("取消", "取消")
         yield self.replies.markdown_tip(
             event,
             f"找到多个包含「{target_name}」的游戏角色，请回复序号进行绑定：",
             "\n".join(lines),
-            "30秒内有效，回复“取消”退出",
+            f"30秒内有效，可直接点击角色名或回复序号；回复“取消”或点击 {cancel_btn} 退出",
         )
 
         result = await self.wait_session_reply(
@@ -326,50 +304,36 @@ class BindHandlers(BqyxServices):
             err_msg = "未收到有效回复，已退出绑定流程。"
             yield self.replies.markdown_warn(event, err_msg)
 
+    @filter.command("我的绑定")
     @error_reply
     @command_rate_limit(name="我的绑定")
-    @filter.command("我的绑定")
     async def check_my_bind(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         sender_id = str(event.get_sender_id() or "")
         bind = await self.store.get_user_bind(group_id, sender_id)
         if not bind:
-            yield self.replies.markdown_tip(
-                event,
-                "你尚未在本群绑定游戏角色",
-                "/绑定游戏名 <角色名> 或 /绑定uid <UID>",
-                "示例：/绑定游戏名 张三 或 /绑定uid 123456",
-            )
-            return
+            raise UserNotBoundError()
         yield self.replies.markdown_success(
             event,
             f"已绑定角色信息",
             [f"UID: `{bind.uid}`", f"存档序号: `{bind.arch_index}`"],
         )
 
+    @filter.command("我的信息")
     @error_reply
     @my_info_limit
-    @filter.command("我的信息")
     async def check_my_contribution(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         sender_id = str(event.get_sender_id() or "")
         bind = await self.store.get_user_bind(group_id, sender_id)
         if not bind:
-            yield self.replies.markdown_tip(
-                event,
-                "你尚未在本群绑定游戏角色",
-                "/绑定游戏名 <角色名> 或 /绑定uid <UID>",
-                "例如：/绑定游戏名 张三",
-            )
-            return
+            raise UserNotBoundError()
 
         format_type = parse_format(event.message_str, "图片")
         user = await self.account.get_user()

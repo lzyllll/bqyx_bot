@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..context import BqyxServices
-from ..errors import BotError
+from ..errors import ArmyNotBoundError, BotError, GroupOnlyError
 from ..hooks import command_rate_limit, error_reply
 from ..models import MemberSnapshot, UnionSnapshot
 from ..parsing import parse_format_and_limit
@@ -101,8 +101,7 @@ class ScheduleHandlers(BqyxServices):
         """昨日贡献：默认全部成员图片；加值 '昨日贡献 1400' 只显示低于该值的成员。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         limit, _ = parse_format_and_limit(
             event.message_str,
@@ -111,13 +110,7 @@ class ScheduleHandlers(BqyxServices):
         )
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         army_cache: dict[int, list] = {}
         day, scores = await self._yesterday_scores(

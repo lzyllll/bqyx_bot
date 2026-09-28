@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 import pytest
@@ -79,13 +80,17 @@ class DummyBindService(BindHandlers):
 
 
 async def invoke_handler(fn, *args, **kwargs):
-    res = fn(*args, **kwargs)
-    if hasattr(res, "__anext__"):
-        items = []
-        async for item in res:
-            items.append(item)
-        return items
-    return await res
+    try:
+        res = fn(*args, **kwargs)
+        if hasattr(res, "__anext__"):
+            items = []
+            async for item in res:
+                items.append(item)
+            return items
+        return await res
+    except BotError as err:
+        from astrbot_plugin_bqyx.hooks import format_error_markdown
+        return [SimpleNamespace(text=format_error_markdown(err))]
 
 
 @pytest.mark.asyncio
@@ -211,8 +216,8 @@ async def test_bind_game_name_multi_match_session_select():
 
     assert len(results) == 2
     prompt_text = getattr(results[0], "text", str(results[0]))
-    assert "剑仙李白 (总贡献: 120,000)" in prompt_text
-    assert "逍遥剑仙 (总贡献: 50,000)" in prompt_text
+    assert '<qqbot-cmd-input text="1" show="剑仙李白" reference="false" /> (总贡献: 120,000)' in prompt_text
+    assert '<qqbot-cmd-input text="2" show="逍遥剑仙" reference="false" /> (总贡献: 50,000)' in prompt_text
     assert "1001" not in prompt_text
     assert "1002" not in prompt_text
 
@@ -326,4 +331,63 @@ async def test_bind_game_name_multi_match_invalid_index():
     invalid_msg = getattr(results[1], "text", str(results[1]))
     assert "输入无效序号" in invalid_msg
     handler.store.set_user_bind.assert_not_called()
+
+
+def test_clean_reply_text():
+    from astrbot_plugin_bqyx.context import clean_reply_text
+
+    assert clean_reply_text("[At:qq_official] 99") == "99"
+    assert clean_reply_text("[At:qq_official] 取消") == "取消"
+    assert clean_reply_text("[At:123456] 1") == "1"
+    assert clean_reply_text("@机器人 1") == "1"
+    assert clean_reply_text(" /2 ") == "2"
+    assert clean_reply_text("#3") == "3"
+    assert clean_reply_text("") == ""
+
+
+@pytest.mark.asyncio
+async def test_wait_session_reply_with_pending_handler():
+    from astrbot_plugin_bqyx.context import BqyxServices
+
+    service = BqyxServices()
+    init_event = FakeEvent(group_id="group_1", user_id="user_1", message="绑定游戏名 杀")
+
+    async def simulate_reply():
+        await asyncio.sleep(0.02)
+        reply_event = FakeEvent(group_id="group_1", user_id="user_1", message="[At:qq_official] 2")
+        reply_event.stop_event = MagicMock()
+        await DummyBindService([]).handle_pending_session_reply(reply_event)
+        assert reply_event.stop_event.called
+
+    task = asyncio.create_task(simulate_reply())
+    res = await service.wait_session_reply(init_event, timeout=1)
+    await task
+
+    assert res.ok is True
+    assert res.text == "2"
+    assert res.cancelled is False
+    assert res.timed_out is False
+
+
+@pytest.mark.asyncio
+async def test_wait_session_reply_cancel_with_pending_handler():
+    from astrbot_plugin_bqyx.context import BqyxServices
+
+    service = BqyxServices()
+    init_event = FakeEvent(group_id="group_2", user_id="user_2", message="绑定游戏名 杀")
+
+    async def simulate_cancel():
+        await asyncio.sleep(0.02)
+        reply_event = FakeEvent(group_id="group_2", user_id="user_2", message="[At:qq_official] 取消")
+        reply_event.stop_event = MagicMock()
+        await DummyBindService([]).handle_pending_session_reply(reply_event)
+        assert reply_event.stop_event.called
+
+    task = asyncio.create_task(simulate_cancel())
+    res = await service.wait_session_reply(init_event, timeout=1)
+    await task
+
+    assert res.ok is False
+    assert res.cancelled is True
+
 

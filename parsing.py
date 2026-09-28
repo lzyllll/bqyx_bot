@@ -67,6 +67,12 @@ def parse_choice_index(
     if text is None:
         return None
     raw = str(text).strip()
+    for prefix in ("#", "/", "第", "选择", "绑定"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):].strip()
+    for suffix in ("号", "个"):
+        if raw.endswith(suffix):
+            raw = raw[:-len(suffix)].strip()
     try:
         val = int(raw)
         if min_count <= val <= max_count:

@@ -25,18 +25,18 @@ class HelpHandlers(BqyxServices):
         for res in await self.replies.build_help(event, module=clean_module):
             yield res
 
+    @filter.command("统计RPM", alias={"统计rpm"})
     @error_reply
     @rpm_check_limit
-    @filter.command("统计RPM", alias={"统计rpm"})
     async def show_rpm(self, event: AstrMessageEvent) -> None:
         from ..hooks import _send_reply
 
         current = total_call_limit.calls_in_period()
         await _send_reply(event, f"当前全局 RPM：{current}/{TOTAL_CALLS_PER_MINUTE}")
 
+    @filter.command("统计今日调用", alias={"统计今日调用次数"})
     @error_reply
     @daily_call_stats_limit
-    @filter.command("统计今日调用", alias={"统计今日调用次数"})
     async def show_daily_command_calls(self, event: AstrMessageEvent) -> None:
         from ..hooks import _send_reply
 

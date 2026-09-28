@@ -104,7 +104,7 @@ async def test_send_help_qq_official_keyboard_sent(tmp_path):
     event = MagicMock()
 
     with patch("astrbot_plugin_bqyx.qq.components.send_keyboard", new_callable=AsyncMock) as mock_send_kb:
-        await service.send_help(event, module="军队查询")
+        await service.build_help(event, module="军队查询")
         mock_send_kb.assert_awaited_once()
 
         call_kwargs = mock_send_kb.call_args[1]

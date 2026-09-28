@@ -8,6 +8,13 @@ from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from bqyx_api.render import PlayerHtmlRenderer
 
 from ..context import BqyxServices
+from ..errors import (
+    ArmyNotBoundError,
+    BotError,
+    GroupOnlyError,
+    ParamError,
+    UserNotBoundError,
+)
 from ..hooks import command_rate_limit, error_reply, my_dps_limit
 from ..models import ContributionKind
 from ..parsing import (
@@ -17,20 +24,21 @@ from ..parsing import (
     parse_year_month,
 )
 from ..render import MyContributionRenderer
+from ..reply import md_cmd_example, md_cmd_input
 from ..schedule import as_shanghai
 
 
 class QueryHandlers(BqyxServices):
-    async def _get_army(self, group_id: str) -> tuple[Any, int] | None:
+    async def _get_army(self, group_id: str) -> tuple[Any, int]:
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
-            return None
+            raise ArmyNotBoundError()
         user = await self.account.get_user()
         return user, army_id
 
+    @filter.command("我的战力", alias={"战力", "查战力"})
     @error_reply
     @my_dps_limit
-    @filter.command("我的战力", alias={"战力", "查战力"})
     async def check_my_dps(
         self,
         event: AstrMessageEvent,
@@ -38,19 +46,12 @@ class QueryHandlers(BqyxServices):
         """查询角色战力面板与加成汇总。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         qq_id = str(event.get_sender_id() or "")
         bind = await self.store.get_user_bind(group_id, qq_id)
         if bind is None:
-            yield self.replies.markdown_tip(
-                event,
-                "你尚未在本群绑定游戏角色",
-                "/绑定游戏名 <角色名> 或 /绑定uid <UID>",
-                "例如：/绑定游戏名 张三",
-            )
-            return
+            raise UserNotBoundError()
 
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
@@ -100,9 +101,9 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("我的贡献", alias={"查贡献","贡献墙", "我的日贡"})
     @error_reply
     @command_rate_limit(name="我的贡献")
-    @filter.command("我的贡献", alias={"贡献墙", "我的日贡"})
     async def check_my_contribution_wall(
         self,
         event: AstrMessageEvent,
@@ -111,43 +112,25 @@ class QueryHandlers(BqyxServices):
         """查询本月每日日贡贡献日历墙。支持指定月份（如 2026-09 或 上月）。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         qq_id = str(event.get_sender_id() or "")
         bind = await self.store.get_user_bind(group_id, qq_id)
         if bind is None:
-            yield self.replies.markdown_tip(
-                event,
-                "你尚未在本群绑定游戏角色",
-                "/绑定游戏名 <角色名> 或 /绑定uid <UID>",
-                "例如：/绑定游戏名 张三",
-            )
-            return
+            raise UserNotBoundError()
 
         raw_text = event.message_str or ""
         now = as_shanghai()
         year, month = parse_year_month(raw_text, default_now=now)
 
         if not (1 <= month <= 12 and 2000 <= year <= 2100):
-            yield self.replies.markdown_tip(
-                event,
+            raise ParamError(
                 "月份格式无效",
-                "/我的贡献 或 /我的贡献 2026-09",
-                "示例：我的贡献 2026-09 或 我的贡献 上月",
+                usage="/我的贡献 或 /我的贡献 2026-09",
+                extra="示例：我的贡献 2026-09 或 我的贡献 上月",
             )
-            return
 
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
 
         today = now.date()
         today_str = today.isoformat()
@@ -243,9 +226,9 @@ class QueryHandlers(BqyxServices):
         for res in await self.replies.build_my_contribution_wall(event, png):
             yield res
 
+    @filter.command("查修罗")
     @error_reply
     @command_rate_limit(name="查修罗")
-    @filter.command("查修罗")
     async def check_demon(
         self,
         event: AstrMessageEvent,
@@ -254,19 +237,12 @@ class QueryHandlers(BqyxServices):
         """查询自己的修罗地图。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         qq_id = str(event.get_sender_id() or "")
         bind = await self.store.get_user_bind(group_id, qq_id)
         if bind is None:
-            yield self.replies.markdown_tip(
-                event,
-                "你尚未在本群绑定游戏角色",
-                "/绑定游戏名 <角色名> 或 /绑定uid <UID>",
-                "例如：/绑定游戏名 张三",
-            )
-            return
+            raise UserNotBoundError()
 
         if format_type not in ("图片", "文本"):
             format_type = parse_format(event.message_str, "图片")
@@ -279,50 +255,30 @@ class QueryHandlers(BqyxServices):
         for res in await self.replies.build_demon(event, result, format_type, title=title):
             yield res
 
+    @filter.command("军队信息")
     @error_reply
     @command_rate_limit(name="军队信息")
-    @filter.command("军队信息")
     async def check_union_info(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         format_type = parse_format(event.message_str, "图片")
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
         union_info = await user.get_union_info(army_id)
         for res in await self.replies.build_union_info(event, union_info, format_type):
             yield res
 
+    @filter.command("查成员")
     @error_reply
     @command_rate_limit(name="查成员")
-    @filter.command("查成员")
     async def check_members(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         format_type = parse_format(event.message_str, "图片")
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
         members = (await user.get_members(army_id)).sort(
             key=lambda m: m.detail.conDay,
             reverse=True,
@@ -337,26 +293,16 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("查争霸")
     @error_reply
     @command_rate_limit(name="查争霸")
-    @filter.command("查争霸")
     async def check_domain(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         format_type = parse_format(event.message_str, "图片")
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
         members = await user.get_members(army_id)
         union_info = await user.get_union_info(army_id)
         bind = await self.optional_bind(group_id, str(event.get_sender_id()))
@@ -369,27 +315,27 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("members")
     @error_reply
     @command_rate_limit(name="members")
-    @filter.command("members")
     async def check_members_by_id(
         self, event: AstrMessageEvent, union_id: str = ""
     ) -> None:
-        raw_id = extract_command_arg(union_id, event, ("members")).strip()
+        raw_id = extract_command_arg(union_id, event, ("members",)).strip()
         if not raw_id:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/members", "members")
+            ex = md_cmd_example("/members 26490", "members 26490")
+            raise ParamError(
                 "请输入军队ID",
-                "/members <军队ID>",
-                "例如：/members 26490",
+                usage=f"{tag} `<军队ID>`",
+                extra=f"例如：{ex}",
             )
-            return
         if not raw_id.isdigit() or int(raw_id) <= 0:
-            yield self.replies.markdown_warn(
-                event,
-                "军队ID格式错误：军队 ID 必须是正整数，例如 /members 26490",
+            ex = md_cmd_example("/members 26490", "members 26490")
+            raise ParamError(
+                "军队ID格式错误：军队 ID 必须是正整数",
+                extra=f"例如：{ex}",
             )
-            return
         target_id = int(raw_id)
         user = await self.account.get_user()
         members = (await user.get_members(target_id)).sort(
@@ -411,27 +357,27 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("union")
     @error_reply
     @command_rate_limit(name="union")
-    @filter.command("union")
     async def check_union_by_id(
         self, event: AstrMessageEvent, union_id: str = ""
     ):
-        raw_id = extract_command_arg(union_id, event, ("union")).strip()
+        raw_id = extract_command_arg(union_id, event, ("union",)).strip()
         if not raw_id:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/union", "union")
+            ex = md_cmd_example("/union 26490", "union 26490")
+            raise ParamError(
                 "请输入军队ID",
-                "/union <军队ID>",
-                "例如：/union 26490",
+                usage=f"{tag} `<军队ID>`",
+                extra=f"例如：{ex}",
             )
-            return
         if not raw_id.isdigit() or int(raw_id) <= 0:
-            yield self.replies.markdown_warn(
-                event,
-                "军队ID格式错误：军队 ID 必须是正整数，例如 /union 26490",
+            ex = md_cmd_example("/union 26490", "union 26490")
+            raise ParamError(
+                "军队ID格式错误：军队 ID 必须是正整数",
+                extra=f"例如：{ex}",
             )
-            return
         target_id = int(raw_id)
         user = await self.account.get_user()
         union = await user.get_union_info(target_id)
@@ -442,27 +388,27 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("domain")
     @error_reply
     @command_rate_limit(name="domain")
-    @filter.command("domain")
     async def check_domain_by_id(
         self, event: AstrMessageEvent, union_id: str = ""
     ):
-        raw_id = extract_command_arg(union_id, event, ("domain")).strip()
+        raw_id = extract_command_arg(union_id, event, ("domain",)).strip()
         if not raw_id:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/domain", "domain")
+            ex = md_cmd_example("/domain 26490", "domain 26490")
+            raise ParamError(
                 "请输入军队ID",
-                "/domain <军队ID>",
-                "例如：/domain 26490",
+                usage=f"{tag} `<军队ID>`",
+                extra=f"例如：{ex}",
             )
-            return
         if not raw_id.isdigit() or int(raw_id) <= 0:
-            yield self.replies.markdown_warn(
-                event,
-                "军队ID格式错误：军队 ID 必须是正整数，例如 /domain 26490",
+            ex = md_cmd_example("/domain 26490", "domain 26490")
+            raise ParamError(
+                "军队ID格式错误：军队 ID 必须是正整数",
+                extra=f"例如：{ex}",
             )
-            return
         target_id = int(raw_id)
         user = await self.account.get_user()
         members = await user.get_members(target_id)
@@ -482,27 +428,27 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("pk")
     @error_reply
     @command_rate_limit(name="pk")
-    @filter.command("pk")
     async def check_pk_rank_by_id(
         self, event: AstrMessageEvent, union_id: str = ""
     ):
-        raw_id = extract_command_arg(union_id, event, ("pk")).strip()
+        raw_id = extract_command_arg(union_id, event, ("pk",)).strip()
         if not raw_id:
-            yield self.replies.markdown_tip(
-                event,
+            tag = md_cmd_input("/pk", "pk")
+            ex = md_cmd_example("/pk 26490", "pk 26490")
+            raise ParamError(
                 "请输入军队ID",
-                "/pk <军队ID>",
-                "例如：/pk 26490",
+                usage=f"{tag} `<军队ID>`",
+                extra=f"例如：{ex}",
             )
-            return
         if not raw_id.isdigit() or int(raw_id) <= 0:
-            yield self.replies.markdown_warn(
-                event,
-                "军队ID格式错误：军队 ID 必须是正整数，例如 /pk 26490",
+            ex = md_cmd_example("/pk 26490", "pk 26490")
+            raise ParamError(
+                "军队ID格式错误：军队 ID 必须是正整数",
+                extra=f"例如：{ex}",
             )
-            return
         target_id = int(raw_id)
         user = await self.account.get_user()
         members = await user.get_members(target_id)
@@ -520,26 +466,16 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("查PK", alias={"查pk", "查pk排行", "查PK排行"})
     @error_reply
     @command_rate_limit(name="查PK")
-    @filter.command("查PK", alias={"查pk", "查pk排行", "查PK排行"})
     async def check_pk_rank(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
         format_type = parse_format(event.message_str, "图片")
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
         members = await user.get_members(army_id)
         bind = await self.optional_bind(group_id, str(event.get_sender_id()))
         for res in await self.replies.build_pk_rank(
@@ -550,9 +486,9 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("查日贡")
     @error_reply
     @command_rate_limit(name="查日贡")
-    @filter.command("查日贡")
     async def check_daily_contribution(self, event: AstrMessageEvent):
         limit, format_type = parse_format_and_limit(
             event.message_str,
@@ -567,9 +503,9 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("查周贡")
     @error_reply
     @command_rate_limit(name="查周贡")
-    @filter.command("查周贡")
     async def check_weekly_contribution(self, event: AstrMessageEvent):
         limit, format_type = parse_format_and_limit(
             event.message_str,
@@ -584,9 +520,9 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("查日贡@")
     @error_reply
     @command_rate_limit(name="查日贡@")
-    @filter.command("查日贡@")
     async def check_daily_contribution_with_at(
         self,
         event: AstrMessageEvent,
@@ -602,9 +538,9 @@ class QueryHandlers(BqyxServices):
         ):
             yield res
 
+    @filter.command("查周贡@")
     @error_reply
     @command_rate_limit(name="查周贡@")
-    @filter.command("查周贡@")
     async def check_weekly_contribution_with_at(
         self,
         event: AstrMessageEvent,
@@ -630,19 +566,9 @@ class QueryHandlers(BqyxServices):
     ):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
         members = (await user.get_members(army_id)).filter(
             lambda m: kind.below_limit(m, limit)
         )
@@ -684,19 +610,9 @@ class QueryHandlers(BqyxServices):
     ):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            yield self.replies.markdown_warn(event, "该指令仅支持在群聊中使用。")
-            return
+            raise GroupOnlyError()
 
-        army_info = await self._get_army(group_id)
-        if not army_info:
-            yield self.replies.markdown_tip(
-                event,
-                "当前群尚未绑定军队",
-                "/绑定军队 <军队ID>",
-                "请管理员先使用：/绑定军队 1234",
-            )
-            return
-        user, army_id = army_info
+        user, army_id = await self._get_army(group_id)
         members = (await user.get_members(army_id)).filter(
             lambda m: kind.below_limit(m, limit)
         )
