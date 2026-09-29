@@ -62,11 +62,12 @@ class BindHandlers(BqyxServices):
             tag = md_cmd_input("/绑定军队", "绑定军队")
             ex = md_cmd_example("/绑定军队 26490", "绑定军队 26490")
             tag_name = md_cmd_input("/绑定游戏名", "绑定游戏名")
+            tag_all = md_cmd_example("/绑定游戏名 ~", "绑定游戏名 ~")
             tag_uid = md_cmd_input("/绑定uid", "绑定uid")
             raise ParamError(
                 "请输入军队ID",
                 usage=f"{tag} `<军队ID>`",
-                extra=f"例如：{ex}；如需绑定个人账号或角色，请使用 {tag_name} 或 {tag_uid}",
+                extra=f"例如：{ex}；如需绑定个人账号或角色，请使用 {tag_name} 或 {tag_all} 或 {tag_uid}",
             )
 
         if not clean_army_id.isdigit():
@@ -213,14 +214,15 @@ class BindHandlers(BqyxServices):
 
         target_name = extract_command_arg(
             name, event, ("绑定游戏名", "绑定角色名", "绑定角色")
-        )
+        ).strip()
         if not target_name:
             tag = md_cmd_input("/绑定游戏名", "绑定游戏名")
             ex = md_cmd_example("/绑定游戏名 张三", "绑定游戏名 张三")
+            tag_all = md_cmd_example("绑定游戏名 ~", "绑定游戏名 ~")
             raise ParamError(
                 "请输入要绑定的游戏角色名",
-                usage=f"{tag} `<角色名>`",
-                extra=f"例如：{ex}（支持模糊匹配）",
+                usage=f"{tag} `<角色名>` 或 {tag_all}",
+                extra=f"• 方式1：{ex}（支持模糊匹配）\n• 方式2：输入 {tag_all} 列出全军团成员直接点击绑定",
             )
 
         army_id = await self.store.get_group_army(str(group_id))
@@ -232,6 +234,10 @@ class BindHandlers(BqyxServices):
         except Exception as exc:
             detail = str(exc).strip()
             raise BotError(f"获取本群军队成员失败：{detail or type(exc).__name__}")
+
+        if target_name in ("~", "～"):
+            yield self._render_all_members_for_bind(event, raw_members)
+            return
 
         target_member = None
         async for item in self.resolve_member_by_name(
@@ -255,6 +261,52 @@ class BindHandlers(BqyxServices):
         )
         msg = f"QQ {sender_id} 已成功绑定游戏角色：{player_name}"
         yield self.replies.markdown_success(event, msg)
+
+    def _render_all_members_for_bind(
+        self,
+        event: AstrMessageEvent,
+        members: Any,
+    ):
+        member_list = list(members)
+        if not member_list:
+            raise BotError("当前军队暂无成员数据。")
+
+        # 先按总贡献降序，再按日贡献降序
+        sorted_members = sorted(
+            member_list,
+            key=lambda m: (
+                int(getattr(m, "contribution", 0) or 0),
+                int(getattr(getattr(m, "detail", None), "conDay", 0) or 0),
+            ),
+            reverse=True,
+        )
+
+        items = []
+        for i, m in enumerate(sorted_members, 1):
+            p_name = (
+                getattr(getattr(m, "detail", None), "playerName", None)
+                or f"UID_{getattr(m, 'uid', '')}"
+            )
+            # 点击后把 绑定游戏名 xxx 填入输入框
+            link = md_cmd_example(p_name, f"绑定游戏名 {p_name}")
+            items.append(f"{i:02d}. {link}")
+
+        row_lines = []
+        for i in range(0, len(items), 2):
+            left = items[i]
+            if i + 1 < len(items):
+                right = items[i + 1]
+                row_lines.append(f"<sub>{left}\u3000\u3000{right}</sub>")
+            else:
+                row_lines.append(f"<sub>{left}</sub>")
+
+        body = "\n".join(row_lines)
+        md_text = (
+            f"> 💡 **军团成员快捷绑定 (共 {len(sorted_members)} 人)**\n"
+            f"> 点击下方蓝色游戏名，自动填入绑定指令：\n\n"
+            f"{body}"
+        )
+        return self.replies.markdown_result(event, md_text)
 
     @filter.command("我的绑定")
     @error_reply

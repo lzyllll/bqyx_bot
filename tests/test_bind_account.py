@@ -546,4 +546,71 @@ async def test_bind_game_name_multi_match_exact_name_reply():
     assert "逍遥剑仙" in success_text
 
 
+@pytest.mark.asyncio
+async def test_bind_game_name_list_all_members_tilde():
+    """测试 绑定游戏名 ~ 输出两列小字、序号、游戏名蓝字交互标签。"""
+    members = [
+        SimpleNamespace(
+            uid="1001",
+            index=0,
+            detail=SimpleNamespace(playerName="逍遥剑仙", conDay=1200),
+            contribution=100000,
+        ),
+        SimpleNamespace(
+            uid="1002",
+            index=1,
+            detail=SimpleNamespace(playerName="无双战神", conDay=1400),
+            contribution=200000,
+        ),
+        SimpleNamespace(
+            uid="1003",
+            index=0,
+            detail=SimpleNamespace(playerName="落叶秋风", conDay=500),
+            contribution=50000,
+        ),
+    ]
+    handler = DummyBindService(members)
+    event = FakeEvent(group_id="1001", user_id="456", message="绑定游戏名 ~")
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="~")
+    assert len(results) == 1
+    text = getattr(results[0], "text", str(results[0]))
+
+    # 包含小字 <sub> 标签
+    assert "<sub>" in text and "</sub>" in text
+    # 包含两列排版和序号（按总贡献降序排序：无双战神 -> 逍遥剑仙 -> 落叶秋风）
+    assert "01." in text
+    assert "02." in text
+    assert "03." in text
+    # 包含点击即填入绑定游戏名的交互标签
+    import urllib.parse
+    encoded_cmd = urllib.parse.quote("绑定游戏名 无双战神")
+    assert f'<qqbot-cmd-input text="{encoded_cmd}" show="无双战神" reference="false" />' in text
+    # 全角 ～ 同样支持
+    event_full = FakeEvent(group_id="1001", user_id="456", message="绑定游戏名 ～")
+    results_full = await invoke_handler(fn, handler, event_full, name="～")
+    assert len(results_full) == 1
+    assert "无双战神" in getattr(results_full[0], "text", str(results_full[0]))
+
+
+@pytest.mark.asyncio
+async def test_bind_game_name_missing_param_has_tilde_usage():
+    """测试 绑定游戏名 未传参时，错误提示中包含 '绑定游戏名 ~' 指令引导。"""
+    handler = DummyBindService([])
+    event = FakeEvent(group_id="1001", user_id="456", message="绑定游戏名")
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="")
+    assert len(results) == 1
+    text = getattr(results[0], "text", str(results[0]))
+    assert "绑定游戏名 ~" in text
+
+
 

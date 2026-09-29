@@ -132,12 +132,13 @@ class UserNotBoundError(BotError):
     def __init__(self) -> None:
         tag_name = md_cmd_input("/绑定游戏名", "绑定游戏名")
         tag_uid = md_cmd_input("/绑定uid", "绑定uid")
+        tag_all = md_cmd_example("/绑定游戏名 ~", "绑定游戏名 ~")
         ex_name = md_cmd_example("/绑定游戏名 张三", "绑定游戏名 张三")
         ex_uid = md_cmd_example("/绑定uid 123456", "绑定uid 123456")
         super().__init__(
             message="你尚未在本群绑定游戏角色",
-            usage=f"{tag_name} `<角色名>` 或 {tag_uid} `<UID>`",
-            extra=f"• {ex_name}（推荐，支持重名选择）\n• {ex_uid}",
+            usage=f"{tag_name} `<角色名>` 或 {tag_all} 或 {tag_uid} `<UID>`",
+            extra=f"• 方式1：{ex_name}（推荐，支持模糊匹配）\n• 方式2：{tag_all}（列出全部成员直接点击绑定）\n• 方式3：{ex_uid}",
             is_expected=True,
         )
 

@@ -51,6 +51,8 @@ def extract_command_arg(
             message = getattr(event, "message", None)
             raw_text = getattr(message, "text", "") or ""
         text = raw_text.strip()
+        if text.startswith("/"):
+            text = text[1:].strip()
         for prefix in prefixes:
             if text.startswith(prefix):
                 return text[len(prefix) :].strip()
