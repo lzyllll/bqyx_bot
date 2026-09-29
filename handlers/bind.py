@@ -10,7 +10,6 @@ from ..errors import (
     ArmyNotBoundError,
     ArmyNotFoundError,
     BotError,
-    GroupOnlyError,
     ParamError,
     UserNotBoundError,
     bqyx_error_to_bot_error,
@@ -23,7 +22,7 @@ from ..parsing import (
     parse_choice_index,
     parse_format,
 )
-from ..reply import md_cmd_example, md_cmd_input
+from ..reply import md_cmd_enter, md_cmd_example, md_cmd_input
 
 
 def pick_member_for_uid(members: Any, uid: str) -> Any:
@@ -48,16 +47,76 @@ class BindHandlers(BqyxServices):
             future.set_result(event)
             event.stop_event()
 
+    @filter.command("切换账号", alias={"选择账号", "切换角色", "换绑", "选择角色"})
+    @error_reply
+    async def switch_account(self, event: AstrMessageEvent):
+        """私聊中切换已绑定的游戏账号。"""
+        async for res in self._show_account_selector(event):
+            yield res
+
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def on_private_message(self, event: AstrMessageEvent):
-        """私人聊天适配：获取 QQ 关联的所有账号，通过会话选择器选择绑定。"""
-        msg_str = (event.message_str or "").strip()
-        # 若是常规以 / 或 # 开头的指令且并非绑定/切换相关，则不在此拦截，放行给具体指令
-        if msg_str.startswith(("/", "#")):
-            cmd_body = msg_str.lstrip("/#").strip()
-            if not any(cmd_body.startswith(k) for k in ("绑定", "选择账号", "切换账号", "我的账号")):
-                return
+        """私人聊天消息适配：
+        - 若用户发送切换账号指令，进入选择器流程；
+        - 若尚未持久化绑定私聊账号，进入选择器引导流程；
+        - 若已持久化绑定：
+          - 若为已知指令，直接放行给各指令 handler 执行；
+          - 若为非指令普通消息，展示当前绑定角色卡片与快捷指令/切换账号按钮。
+        """
+        qq_id = str(event.get_sender_id() or "")
+        if not qq_id:
+            return
 
+        msg_str = (event.message_str or "").strip()
+        cmd_body = msg_str.lstrip("/#").strip()
+
+        # 1. 检查是否为切换账号/换绑指令
+        is_switch_cmd = any(
+            cmd_body.startswith(k)
+            for k in ("切换账号", "选择账号", "切换角色", "换绑", "选择角色")
+        ) or (cmd_body in ("绑定", "换号"))
+
+        # 2. 查询当前是否已持久化绑定
+        current_bind = await self.store.get_private_user_bind(qq_id)
+
+        # 3. 如果是切换指令，或者尚未绑定过任何账号，进入选择器流程
+        if is_switch_cmd or current_bind is None:
+            async for res in self._show_account_selector(event):
+                yield res
+            return
+
+        # 4. 如果已经绑定过，且当前输入是其它指令（如 我的信息、我的日贡、我的战力、帮助、查等），放行给具体 handler 处理，绝不弹窗打扰！
+        command_prefixes = (
+            "我的", "查", "帮助", "help", "统计", "union", "members",
+            "dps", "贡献", "日贡", "周贡", "物品", "战力", "绑定"
+        )
+        if any(cmd_body.startswith(p) for p in command_prefixes):
+            return
+
+        # 5. 如果是普通打招呼或其它消息，回复当前绑定的角色状态卡片和快捷按钮
+        p_name = current_bind.player_name or f"UID_{current_bind.uid}"
+        btn_switch = md_cmd_enter("切换账号", "切换账号")
+        btn_info = md_cmd_enter("我的信息", "我的信息")
+        btn_daily = md_cmd_enter("我的日贡", "我的日贡")
+        btn_dps = md_cmd_enter("我的战力", "我的战力")
+        btn_things = md_cmd_enter("我的物品", "我的物品")
+        btn_bind = md_cmd_enter("我的绑定", "我的绑定")
+
+        card_md = (
+            f"> 💡 **爆枪英雄私聊助手**\n"
+            f"> 当前绑定角色：**{p_name}** (UID: `{current_bind.uid}`, 存档: `{current_bind.arch_index}`)\n"
+            f">\n"
+            f"> 快捷功能（点击直接发送）：\n"
+            f"> • {btn_info}　• {btn_daily}\n"
+            f"> • {btn_dps}　• {btn_things}\n"
+            f"> • {btn_bind}　• {btn_switch}\n"
+            f">\n"
+            f"> 💬 如需更换绑定的角色，请点击上方 {btn_switch}。"
+        )
+        yield self.replies.markdown_result(event, card_md)
+
+    async def _show_account_selector(self, event: AstrMessageEvent):
+        """展示所有候选账号列表并等待用户选择绑定。"""
         qq_id = str(event.get_sender_id() or "")
         if not qq_id:
             return
@@ -147,10 +206,15 @@ class BindHandlers(BqyxServices):
         await self.store.set_private_user_bind(
             qq_id, selected_uid, selected_arch, selected_name
         )
+        btn_switch = md_cmd_enter("切换账号", "切换账号")
         yield self.replies.markdown_success(
             event,
             f"私聊已成功绑定角色：{selected_name}",
-            [f"UID: `{selected_uid}`", f"存档序号: `{selected_arch}`"],
+            [
+                f"UID: `{selected_uid}`",
+                f"存档序号: `{selected_arch}`",
+                f"已持久化保存，后续可直接使用查询指令；如需换绑请发送 {btn_switch}",
+            ],
         )
 
     @filter.command("绑定军队")
@@ -158,7 +222,9 @@ class BindHandlers(BqyxServices):
     async def bind_army(self, event: AstrMessageEvent, army_id: str = ""):
         group_id = str(event.get_group_id() or "")
         if not group_id:
-            raise GroupOnlyError()
+            tag_name = md_cmd_input("绑定游戏名", "绑定游戏名")
+            tag_switch = md_cmd_enter("切换账号", "切换账号")
+            raise BotError(f"私聊无需绑定军队。如需绑定或切换角色，请使用 {tag_name} 或 {tag_switch}。")
 
         clean_army_id = extract_command_arg(
             army_id, event, ("绑定军队",)
@@ -212,8 +278,7 @@ class BindHandlers(BqyxServices):
     @command_rate_limit(name="绑定uid")
     async def bind_uid(self, event: AstrMessageEvent, uid: str = ""):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
+        qq_id = str(event.get_sender_id() or "")
 
         resolved_uid = extract_uid(uid) or extract_uid(event.message_str)
         if not resolved_uid:
@@ -223,6 +288,23 @@ class BindHandlers(BqyxServices):
                 usage=f"{tag} `<UID>`",
                 extra="例如 123456 或 123456_1",
             )
+
+        if not group_id:
+            user = await self.account.get_user()
+            player_name = f"UID_{resolved_uid}"
+            try:
+                acc = await user.get_account(resolved_uid, 0)
+                player_name = getattr(acc, "title", None) or player_name
+            except Exception:
+                pass
+            await self.store.set_private_user_bind(qq_id, resolved_uid, 0, player_name)
+            btn_switch = md_cmd_enter("切换账号", "切换账号")
+            yield self.replies.markdown_success(
+                event,
+                f"私聊已成功绑定游戏角色：{player_name}",
+                [f"UID: `{resolved_uid}`", "存档: `0`", f"如需切换账号请点击 {btn_switch}"],
+            )
+            return
 
         army_id = await self.store.get_group_army(str(group_id))
         if army_id is None:
@@ -239,7 +321,6 @@ class BindHandlers(BqyxServices):
             raise BotError("未在本群军队中找到该成员，请确认 UID 或先绑定正确军队。")
 
         player_name = member.detail.playerName or ""
-        qq_id = str(event.get_sender_id() or "")
         await self.store.set_user_bind(group_id, qq_id, resolved_uid, int(member.index))
         details = [f"UID: `{resolved_uid}`", f"存档: `{member.index}`"]
         if player_name:
@@ -255,8 +336,7 @@ class BindHandlers(BqyxServices):
     @command_rate_limit(name="绑定账号")
     async def bind_account(self, event: AstrMessageEvent, username: str = ""):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
+        qq_id = str(event.get_sender_id() or "")
 
         clean_username = extract_command_arg(
             username, event, ("绑定账号", "绑定用户名")
@@ -270,9 +350,6 @@ class BindHandlers(BqyxServices):
                 extra=f"例如：{ex}",
             )
 
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
         user = await self.account.get_user()
         try:
             uid = str(await user.get_uid_by_username(clean_username)).strip()
@@ -287,6 +364,25 @@ class BindHandlers(BqyxServices):
         if not uid.isdigit() or uid == "0":
             raise BotError(f"找不到账号「{clean_username}」，请确认 4399 用户名是否正确。")
 
+        if not group_id:
+            player_name = clean_username
+            try:
+                acc = await user.get_account(uid, 0)
+                player_name = getattr(acc, "title", None) or clean_username
+            except Exception:
+                pass
+            await self.store.set_private_user_bind(qq_id, uid, 0, player_name)
+            btn_switch = md_cmd_enter("切换账号", "切换账号")
+            yield self.replies.markdown_success(
+                event,
+                f"私聊已成功绑定游戏账号：{clean_username}",
+                [f"UID: `{uid}`", f"角色: `{player_name}`", f"如需切换账号请点击 {btn_switch}"],
+            )
+            return
+
+        army_id = await self.store.get_group_army(str(group_id))
+        if army_id is None:
+            raise ArmyNotBoundError()
         try:
             members = await user.get_members(army_id)
         except Exception as exc:
@@ -298,7 +394,6 @@ class BindHandlers(BqyxServices):
             raise BotError(f"账号「{clean_username}」不在本群绑定的军队中，请确认账号或先绑定正确军队。")
 
         player_name = member.detail.playerName or ""
-        qq_id = str(event.get_sender_id() or "")
         await self.store.set_user_bind(group_id, qq_id, uid, int(member.index))
         details = [f"账号: `{clean_username}`", f"UID: `{uid}`", f"存档: `{member.index}`"]
         if player_name:
@@ -314,8 +409,38 @@ class BindHandlers(BqyxServices):
     @command_rate_limit(name="绑定游戏名")
     async def bind_game_name(self, event: AstrMessageEvent, name: str = ""):
         group_id = str(event.get_group_id() or "")
+        sender_id = str(event.get_sender_id() or "")
+
+        target_name = extract_command_arg(
+            name, event, ("绑定游戏名", "绑定角色名", "绑定角色")
+        ).strip()
+
+        # 私聊直接调起账号选择器或根据输入绑定
         if not group_id:
-            raise GroupOnlyError()
+            if not target_name or target_name in ("~", "～"):
+                async for res in self._show_account_selector(event):
+                    yield res
+                return
+            accounts_raw = await self.store.list_accounts_by_qq(sender_id)
+            target_lower = target_name.lower()
+            matched = [
+                acc for acc in accounts_raw
+                if (acc[2] and target_lower in acc[2].lower())
+            ]
+            if matched:
+                selected_uid, selected_arch, selected_name = matched[0]
+                await self.store.set_private_user_bind(
+                    sender_id, selected_uid, selected_arch, selected_name
+                )
+                yield self.replies.markdown_success(
+                    event,
+                    f"私聊已成功绑定游戏角色：{selected_name}",
+                    [f"UID: `{selected_uid}`", f"存档: `{selected_arch}`"],
+                )
+                return
+            async for res in self._show_account_selector(event):
+                yield res
+            return
 
         target_name = extract_command_arg(
             name, event, ("绑定游戏名", "绑定角色名", "绑定角色")

@@ -31,8 +31,14 @@ from ..schedule import as_shanghai
 
 
 class QueryHandlers(BqyxServices):
-    async def _get_army(self, group_id: str) -> tuple[GameUser, int]:
-        army_id = await self.store.get_group_army(str(group_id))
+    async def _get_army(self, group_id: str, qq_id: str = "") -> tuple[GameUser, int]:
+        army_id = None
+        if group_id:
+            army_id = await self.store.get_group_army(str(group_id))
+        elif qq_id:
+            p_bind = await self.store.get_private_user_bind(str(qq_id))
+            if p_bind:
+                army_id = await self.store.get_user_army_id(p_bind.uid)
         if army_id is None:
             raise ArmyNotBoundError()
         user = await self.account.get_user()
@@ -47,19 +53,19 @@ class QueryHandlers(BqyxServices):
     ) -> None:
         """查询角色战力面板与加成汇总。"""
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
         qq_id = str(event.get_sender_id() or "")
-        bind = await self.store.get_user_bind(group_id, qq_id)
+        if group_id:
+            bind = await self.store.get_user_bind(group_id, qq_id)
+            army_id = await self.store.get_group_army(group_id)
+        else:
+            bind = await self.store.get_private_user_bind(qq_id)
+            army_id = await self.store.get_user_army_id(bind.uid) if bind else None
+
         if bind is None:
             raise UserNotBoundError()
 
         user = await self.account.get_user()
         account = await user.get_account(bind.uid, bind.arch_index)
-
-        # 获取军队与成员实时数据
-        army_id = await self.store.get_group_army(group_id)
         union_info = None
         member_info = None
         member_list = None
@@ -113,8 +119,7 @@ class QueryHandlers(BqyxServices):
     ) -> None:
         """查询本月每日日贡贡献日历墙。支持指定月份或指定角色名（如 查贡献 逍遥剑仙 或 查贡献 2026-09）。"""
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
+        qq_id = str(event.get_sender_id() or "")
 
         raw_arg = ""
         if event is not None and getattr(event, "message_str", None):
@@ -147,7 +152,7 @@ class QueryHandlers(BqyxServices):
                 extra="示例：查贡献 2026-09 或 查贡献 逍遥剑仙 或 我的贡献 上月",
             )
 
-        user, army_id = await self._get_army(group_id)
+        user, army_id = await self._get_army(group_id, qq_id)
         raw_members = await user.get_members(army_id)
 
         player_name = None
@@ -177,8 +182,10 @@ class QueryHandlers(BqyxServices):
             else:
                 player_name = target_name
         else:
-            qq_id = str(event.get_sender_id() or "")
-            bind = await self.store.get_user_bind(group_id, qq_id)
+            if group_id:
+                bind = await self.store.get_user_bind(group_id, qq_id)
+            else:
+                bind = await self.store.get_private_user_bind(qq_id)
             if bind is None:
                 raise UserNotBoundError()
             target_uid = str(bind.uid)
@@ -323,11 +330,11 @@ class QueryHandlers(BqyxServices):
     ):
         """查询自己的修罗地图。"""
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
         qq_id = str(event.get_sender_id() or "")
-        bind = await self.store.get_user_bind(group_id, qq_id)
+        if group_id:
+            bind = await self.store.get_user_bind(group_id, qq_id)
+        else:
+            bind = await self.store.get_private_user_bind(qq_id)
         if bind is None:
             raise UserNotBoundError()
 
@@ -347,11 +354,9 @@ class QueryHandlers(BqyxServices):
     @command_rate_limit(name="军队信息")
     async def check_union_info(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
+        qq_id = str(event.get_sender_id() or "")
         format_type = parse_format(event.message_str, "图片")
-        user, army_id = await self._get_army(group_id)
+        user, army_id = await self._get_army(group_id, qq_id)
         union_info = await user.get_union_info(army_id)
         for res in await self.replies.build_union_info(event, union_info, format_type):
             yield res
@@ -361,11 +366,9 @@ class QueryHandlers(BqyxServices):
     @command_rate_limit(name="查成员")
     async def check_members(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
+        qq_id = str(event.get_sender_id() or "")
         format_type = parse_format(event.message_str, "文本")
-        user, army_id = await self._get_army(group_id)
+        user, army_id = await self._get_army(group_id, qq_id)
         members = (await user.get_members(army_id)).sort(
             key=lambda m: (
                 int(m.contribution or 0),
@@ -373,7 +376,7 @@ class QueryHandlers(BqyxServices):
             ),
             reverse=True,
         )
-        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
+        bind = await self.optional_bind(group_id, qq_id)
         for res in await self.replies.build_members(
             event,
             members,
@@ -388,14 +391,12 @@ class QueryHandlers(BqyxServices):
     @command_rate_limit(name="查争霸")
     async def check_domain(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
+        qq_id = str(event.get_sender_id() or "")
         format_type = parse_format(event.message_str, "图片")
-        user, army_id = await self._get_army(group_id)
+        user, army_id = await self._get_army(group_id, qq_id)
         members = await user.get_members(army_id)
         union_info = await user.get_union_info(army_id)
-        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
+        bind = await self.optional_bind(group_id, qq_id)
         for res in await self.replies.build_domain(
             event,
             members,
@@ -436,11 +437,7 @@ class QueryHandlers(BqyxServices):
             reverse=True,
         )
         group_id = str(event.get_group_id() or "")
-        bind = (
-            await self.optional_bind(group_id, str(event.get_sender_id()))
-            if group_id
-            else None
-        )
+        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
         for res in await self.replies.build_members(
             event,
             members,
@@ -507,11 +504,7 @@ class QueryHandlers(BqyxServices):
         members = await user.get_members(target_id)
         union_info = await user.get_union_info(target_id)
         group_id = str(event.get_group_id() or "")
-        bind = (
-            await self.optional_bind(group_id, str(event.get_sender_id()))
-            if group_id
-            else None
-        )
+        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
         for res in await self.replies.build_domain(
             event,
             members,
@@ -546,11 +539,7 @@ class QueryHandlers(BqyxServices):
         user = await self.account.get_user()
         members = await user.get_members(target_id)
         group_id = str(event.get_group_id() or "")
-        bind = (
-            await self.optional_bind(group_id, str(event.get_sender_id()))
-            if group_id
-            else None
-        )
+        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
         for res in await self.replies.build_pk_rank(
             event,
             members,
@@ -564,13 +553,11 @@ class QueryHandlers(BqyxServices):
     @command_rate_limit(name="查PK")
     async def check_pk_rank(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
+        qq_id = str(event.get_sender_id() or "")
         format_type = parse_format(event.message_str, "图片")
-        user, army_id = await self._get_army(group_id)
+        user, army_id = await self._get_army(group_id, qq_id)
         members = await user.get_members(army_id)
-        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
+        bind = await self.optional_bind(group_id, qq_id)
         for res in await self.replies.build_pk_rank(
             event,
             members,
@@ -658,10 +645,8 @@ class QueryHandlers(BqyxServices):
         format_type: str,
     ):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
-        user, army_id = await self._get_army(group_id)
+        qq_id = str(event.get_sender_id() or "")
+        user, army_id = await self._get_army(group_id, qq_id)
         members = (
             (await user.get_members(army_id))
             .filter(lambda m: kind.below_limit(m, limit))
@@ -679,7 +664,7 @@ class QueryHandlers(BqyxServices):
             return
 
         if format_type == "图片":
-            bind = await self.optional_bind(group_id, str(event.get_sender_id()))
+            bind = await self.optional_bind(group_id, qq_id)
             for res in await self.replies.build_members(
                 event,
                 members,

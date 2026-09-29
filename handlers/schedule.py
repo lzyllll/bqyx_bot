@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..context import BqyxServices
-from ..errors import ArmyNotBoundError, BotError, GroupOnlyError
+from ..errors import ArmyNotBoundError, BotError
 from ..hooks import command_rate_limit, error_reply
 from ..models import MemberSnapshot, UnionSnapshot
 from ..parsing import parse_format_and_limit
@@ -100,18 +100,14 @@ class ScheduleHandlers(BqyxServices):
     async def check_yesterday_contribution(self, event: AstrMessageEvent) -> None:
         """昨日贡献：默认全部成员图片；加值 '昨日贡献 1400' 只显示低于该值的成员。"""
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
+        qq_id = str(event.get_sender_id() or "")
 
         limit, _ = parse_format_and_limit(
             event.message_str,
             default_limit=None,
             default_format="图片",
         )
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
-        user = await self.account.get_user()
+        user, army_id = await self.require_army(group_id, qq_id)
         army_cache: dict[int, list] = {}
         day, scores = await self._yesterday_scores(
             army_id,
@@ -124,7 +120,7 @@ class ScheduleHandlers(BqyxServices):
         if limit is not None:
             below = {score.uid for score in below_limit(scores, limit)}
             members = [member for member in members if str(member.uid) in below]
-        bind = await self.optional_bind(group_id, str(event.get_sender_id()))
+        bind = await self.optional_bind(group_id, qq_id)
         for res in await self.replies.build_members(
             event,
             members,

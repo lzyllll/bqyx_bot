@@ -80,8 +80,14 @@ class BqyxServices:
             return svc
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
-    async def require_army(self, group_id: str) -> tuple[GameUser, int]:
-        army_id = await self.store.get_group_army(str(group_id))
+    async def require_army(self, group_id: str, qq_id: str = "") -> tuple[GameUser, int]:
+        army_id = None
+        if group_id:
+            army_id = await self.store.get_group_army(str(group_id))
+        elif qq_id:
+            p_bind = await self.store.get_private_user_bind(str(qq_id))
+            if p_bind:
+                army_id = await self.store.get_user_army_id(p_bind.uid)
         if army_id is None:
             raise ArmyNotBoundError()
         user = await self.account.get_user()

@@ -4,8 +4,9 @@ from astrbot.api.event import AstrMessageEvent, filter
 from bqyx_api.archive.things import ThingsDiff
 
 from ..context import BqyxServices
-from ..errors import BotError, GroupOnlyError, UserNotBoundError
+from ..errors import BotError, UserNotBoundError
 from ..hooks import command_rate_limit, error_reply
+from ..models import UserBind
 from ..parsing import extract_at
 
 
@@ -24,16 +25,26 @@ class ThingsHandlers(BqyxServices):
         target: str = "",
     ) -> None:
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
         target_at = extract_at(event, target)
         qq_id = str(target_at.user_id if target_at else event.get_sender_id())
-        bind = await self.store.get_user_bind(group_id, qq_id)
+        if group_id:
+            bind = await self.store.get_user_bind(group_id, qq_id)
+        else:
+            p_bind = await self.store.get_private_user_bind(qq_id)
+            bind = (
+                UserBind(
+                    group_id="",
+                    qq_id=p_bind.qq_id,
+                    uid=p_bind.uid,
+                    arch_index=p_bind.arch_index,
+                )
+                if p_bind
+                else None
+            )
         if not bind:
             if target_at is None:
                 raise UserNotBoundError()
-            raise BotError("被 @ 的用户尚未在本群绑定游戏账号。")
+            raise BotError("被 @ 的用户尚未绑定游戏账号。")
 
         user = await self.account.get_user()
         result = await self.things.capture_for(user, bind.uid, bind.arch_index)

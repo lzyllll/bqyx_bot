@@ -40,7 +40,7 @@ async def test_bind_army_private_chat():
     event = FakeEvent(group_id="", user_id="456", message="绑定军队 26490")
     results = [res async for res in handler.bind_army(event, army_id="26490")]
     assert len(results) == 1
-    assert "仅支持在群聊中使用" in results[0].text
+    assert "私聊无需绑定军队" in results[0].text
     handler.store.set_group_army.assert_not_called()
 
 

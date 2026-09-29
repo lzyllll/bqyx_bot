@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..context import BqyxServices
-from ..errors import ArmyNotBoundError, BotError, GroupOnlyError
+from ..errors import ArmyNotBoundError, BotError
 from ..hooks import (
     error_reply,
     last_week_union_limit,
@@ -202,12 +202,8 @@ class UnionRankHandlers(BqyxServices):
     @yesterday_union_limit
     async def yesterday_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
+        qq_id = str(event.get_sender_id() or "")
+        user, army_id = await self.require_army(group_id, qq_id)
         day = report_date()
         snapshots = await self.store.list_union_snapshots(day)
         if not snapshots:
@@ -226,7 +222,8 @@ class UnionRankHandlers(BqyxServices):
         if not rows:
             raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            raise BotError("本群军队不在前 1000 排行中。")
+            army_desc = "本群军队" if group_id else "您绑定的军队"
+            raise BotError(f"{army_desc}不在前 1000 排行中。")
         await self._with_member_change(rows)
         yield await self._send_rank(
             event,
@@ -241,13 +238,8 @@ class UnionRankHandlers(BqyxServices):
     @union_live_limit
     async def today_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
-        user = await self.account.get_user()
+        qq_id = str(event.get_sender_id() or "")
+        user, army_id = await self.require_army(group_id, qq_id)
         day = report_date()
         prev_map = {
             item.union_id: item
@@ -294,7 +286,8 @@ class UnionRankHandlers(BqyxServices):
         if not rows:
             raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            raise BotError("本群军队不在前 1000 排行中。")
+            army_desc = "本群军队" if group_id else "您绑定的军队"
+            raise BotError(f"{army_desc}不在前 1000 排行中。")
         for row in rows:
             prev = prev_map.get(int(row["union_id"]))
             row["member_change"] = _member_change(row["members_num"], prev)
@@ -311,13 +304,8 @@ class UnionRankHandlers(BqyxServices):
     @total_union_limit
     async def union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
-        user = await self.account.get_user()
+        qq_id = str(event.get_sender_id() or "")
+        user, army_id = await self.require_army(group_id, qq_id)
         day = report_date()
         spec = parse_rank_range(event.message_str)
         cache = await self.store.list_union_snapshots(day)
@@ -337,7 +325,8 @@ class UnionRankHandlers(BqyxServices):
         if not rows:
             raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            raise BotError("本群军队不在前 1000 排行中。")
+            army_desc = "本群军队" if group_id else "您绑定的军队"
+            raise BotError(f"{army_desc}不在前 1000 排行中。")
         await self._with_member_change(rows)
         prev_map = {item.union_id: item for item in cache}
         for row in rows:
@@ -359,13 +348,8 @@ class UnionRankHandlers(BqyxServices):
     @this_week_union_limit
     async def this_week_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
-        user = await self.account.get_user()
+        qq_id = str(event.get_sender_id() or "")
+        user, army_id = await self.require_army(group_id, qq_id)
         baseline_day = last_sunday().isoformat()
         prev_items = await self.store.list_union_snapshots(baseline_day)
         if not prev_items:
@@ -402,12 +386,8 @@ class UnionRankHandlers(BqyxServices):
     @last_week_union_limit
     async def last_week_union_rank(self, event: AstrMessageEvent) -> None:
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
-        army_id = await self.store.get_group_army(str(group_id))
-        if army_id is None:
-            raise ArmyNotBoundError()
+        qq_id = str(event.get_sender_id() or "")
+        user, army_id = await self.require_army(group_id, qq_id)
         start_day, end_day = last_week_range()
         end_items = await self.store.list_union_snapshots(end_day)
         if not end_items:
@@ -459,7 +439,9 @@ class UnionRankHandlers(BqyxServices):
         if not rows:
             raise BotError("指定的排行范围无效。")
         if spec is None and highlight is None:
-            raise BotError("本群军队不在前 1000 排行中。")
+            group_id = str(event.get_group_id() or "")
+            army_desc = "本群军队" if group_id else "您绑定的军队"
+            raise BotError(f"{army_desc}不在前 1000 排行中。")
         await self._with_member_change(rows, prev_day=member_prev_day)
         return await self._send_rank(
             event,

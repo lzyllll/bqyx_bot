@@ -71,13 +71,16 @@ class DummyBindService(BindHandlers):
         self.store.set_user_bind = AsyncMock()
         self.store.get_group_army = AsyncMock(return_value=1001)
         self.store.list_user_binds = AsyncMock(return_value=[])
+        self.store.get_private_user_bind = AsyncMock(return_value=None)
+        self.store.set_private_user_bind = AsyncMock()
+        self.store.list_accounts_by_qq = AsyncMock(return_value=[])
         self.user = MagicMock()
         self.user.get_members = AsyncMock(return_value=members)
         self.account = MagicMock()
         self.account.get_user = AsyncMock(return_value=self.user)
         self.replies = ReplyService(Path("."))
 
-    async def require_army(self, group_id: str):
+    async def require_army(self, group_id: str, qq_id: str = ""):
         return self.user, 1001
 
 

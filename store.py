@@ -221,6 +221,22 @@ class SqliteStore:
 
         return accounts
 
+    async def get_user_army_id(self, uid: str) -> int | None:
+        """根据 UID 查询该玩家最近所在的军队 ID（优先查成员快照，兜底查日贡）。"""
+        row = await self._run(
+            self._fetchone,
+            "SELECT army_id FROM member_snapshot WHERE uid = ? ORDER BY captured_at DESC LIMIT 1",
+            (str(uid),),
+        )
+        if row:
+            return int(row[0])
+        daily_row = await self._run(
+            self._fetchone,
+            "SELECT army_id FROM member_daily WHERE uid = ? ORDER BY computed_at DESC LIMIT 1",
+            (str(uid),),
+        )
+        return int(daily_row[0]) if daily_row else None
+
     async def merge_user_binds(
         self,
         group_id: str,
