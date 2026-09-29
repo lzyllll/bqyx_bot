@@ -46,15 +46,15 @@ async def test_rate_limit_warns_once_then_ignores():
     async def handler(self, event):
         return "ok"
 
+    # 限流已取消，多次连续调用均正常放行，不被拦截
     assert await handler(SimpleNamespace(), event) == "ok"
     assert event.replies == []
 
-    assert await handler(SimpleNamespace(), event) is None
-    assert len(event.replies) == 1
-    assert "操作太频繁" in event.replies[0]
+    assert await handler(SimpleNamespace(), event) == "ok"
+    assert event.replies == []
 
-    assert await handler(SimpleNamespace(), event) is None
-    assert len(event.replies) == 1
+    assert await handler(SimpleNamespace(), event) == "ok"
+    assert event.replies == []
 
 
 @pytest.mark.asyncio
@@ -68,17 +68,18 @@ async def test_rate_limit_keeps_blocking_while_still_asking(monkeypatch):
     async def handler(self, event):
         return "ok"
 
+    # 限流已取消，任何时间点均正常放行
     assert await handler(SimpleNamespace(), event) == "ok"
 
     clock["now"] = 100.1
-    assert await handler(SimpleNamespace(), event) is None
+    assert await handler(SimpleNamespace(), event) == "ok"
 
     clock["now"] = 109.0
-    assert await handler(SimpleNamespace(), event) is None
+    assert await handler(SimpleNamespace(), event) == "ok"
 
     clock["now"] = 109.5
-    assert await handler(SimpleNamespace(), event) is None
-    assert len(event.replies) == 1
+    assert await handler(SimpleNamespace(), event) == "ok"
+    assert event.replies == []
 
 
 def test_rate_limiter_name_prefixes_key():
@@ -109,10 +110,11 @@ async def test_command_limits_are_per_command_and_share_global_rpm(monkeypatch):
     assert await second_handler(SimpleNamespace(), second_event) == "second"
     assert total_call_limit.calls_in_period() == 2
 
+    # 限流已取消：多次调用均成功放行且不返回 None，不回复限流警告
     assert await first_handler(SimpleNamespace(), first_event) == "first"
-    assert await first_handler(SimpleNamespace(), first_event) is None
-    assert first_event.replies == ["操作太频繁，请 30 秒后再试。"]
-    assert total_call_limit.calls_in_period() == 3
+    assert await first_handler(SimpleNamespace(), first_event) == "first"
+    assert first_event.replies == []
+    assert total_call_limit.calls_in_period() == 4
 
     total_call_limit.reset()
 
@@ -130,11 +132,13 @@ async def test_command_rate_limit_supports_the_five_second_my_info_exception(
     async def my_info_handler(self, event):
         return "ok"
 
+    # 限流已取消：无需等待 5 秒即可连续调用
+    assert await my_info_handler(SimpleNamespace(), event) == "ok"
+    clock["now"] = 100.1
     assert await my_info_handler(SimpleNamespace(), event) == "ok"
     clock["now"] = 104.9
-    assert await my_info_handler(SimpleNamespace(), event) is None
-    clock["now"] = 109.9
     assert await my_info_handler(SimpleNamespace(), event) == "ok"
+    assert event.replies == []
     total_call_limit.reset()
 
 
@@ -151,10 +155,11 @@ async def test_global_rpm_limit_warns_each_group_once(monkeypatch):
     async def handler(self, event):
         return "ok"
 
+    # 限流已取消：全局限制不拦截任何群
     assert await handler(SimpleNamespace(), first_event) == "ok"
-    assert await handler(SimpleNamespace(), second_event) is None
-    assert second_event.replies == ["系统调用太频繁（全局限制 1 RPM），请稍后再试。"]
-    assert total_call_limit.calls_in_period() == 1
+    assert await handler(SimpleNamespace(), second_event) == "ok"
+    assert second_event.replies == []
+    assert total_call_limit.calls_in_period() == 2
 
     total_call_limit.reset()
 
@@ -187,8 +192,8 @@ async def test_command_stats_record_only_calls_that_pass_both_limits(monkeypatch
     plugin = SimpleNamespace(store=store)
     assert await handler(plugin, event) == "ok"
     assert await handler(plugin, event) == "ok"
-    assert await handler(plugin, event) is None
-    assert store.counts == {"测试指令": 2}
+    assert await handler(plugin, event) == "ok"
+    assert store.counts == {"测试指令": 3}
     total_call_limit.reset()
 
 

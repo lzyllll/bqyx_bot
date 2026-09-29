@@ -181,9 +181,9 @@ def error_reply(func: F) -> F:
 
 
 class GroupRateLimiter:
-    """按群滑动窗口限流装饰器。"""
+    """按群滑动窗口限流装饰器（已取消限流拦截，仅透传）。"""
 
-    def __init__(self, max_calls: int, period: float, name: str = "") -> None:
+    def __init__(self, max_calls: int = 0, period: float = 0, name: str = "") -> None:
         self.max_calls = max_calls
         self.period = period
         self.name = name
@@ -196,64 +196,17 @@ class GroupRateLimiter:
             return None
         return f"{self.name}:{group_id}" if self.name else group_id
 
-    def _trim(self, key: str, now: float) -> deque[float]:
-        window = self._windows.setdefault(key, deque())
-        cutoff = now - self.period
-        while window and window[0] <= cutoff:
-            window.popleft()
-        if not window:
-            self._warned.discard(key)
-        return window
-
     async def _check(self, event: Any) -> bool:
-        key = self._key(event)
-        if key is None:
-            return True
-
-        now = time.monotonic()
-        window = self._trim(key, now)
-        if len(window) >= self.max_calls:
-            window.append(now)
-            while len(window) > self.max_calls:
-                window.popleft()
-            if key not in self._warned:
-                self._warned.add(key)
-                try:
-                    await _send_reply(event, f"操作太频繁，请 {int(self.period)} 秒后再试。")
-                except Exception:
-                    LOG.exception("发送限流提示失败")
-            return False
-
-        self._warned.discard(key)
-        window.append(now)
         return True
 
     def __call__(self, func: F) -> F:
-        if inspect.isasyncgenfunction(func):
-            @wraps(func)
-            async def gen_wrapper(*args: Any, **kwargs: Any):
-                event = _find_event(args, kwargs)
-                if event is not None and not await self._check(event):
-                    return
-                async for item in func(*args, **kwargs):
-                    yield item
-
-            return gen_wrapper  # type: ignore[return-value]
-
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any):
-            event = _find_event(args, kwargs)
-            if event is not None and not await self._check(event):
-                return None
-            return await func(*args, **kwargs)
-
-        return wrapper  # type: ignore[return-value]
+        return func
 
 
 class GlobalRateLimiter:
-    """所有群指令共用的滑动窗口限流器。"""
+    """所有群指令共用的滑动窗口计数器（已取消限流拦截，仅统计）。"""
 
-    def __init__(self, max_calls: int, period: float) -> None:
+    def __init__(self, max_calls: int = 0, period: float = 60.0) -> None:
         self.max_calls = max_calls
         self.period = period
         self._window: deque[float] = deque()
@@ -263,8 +216,6 @@ class GlobalRateLimiter:
         cutoff = now - self.period
         while self._window and self._window[0] <= cutoff:
             self._window.popleft()
-        if len(self._window) < self.max_calls:
-            self._warned_groups.clear()
 
     def calls_in_period(self) -> int:
         """返回当前滑动窗口内已经放行的调用数。"""
@@ -279,42 +230,11 @@ class GlobalRateLimiter:
     async def _check(self, event: Any) -> bool:
         now = time.monotonic()
         self._trim(now)
-        if len(self._window) >= self.max_calls:
-            group_key = _group_id(event) or "global"
-            if group_key not in self._warned_groups:
-                self._warned_groups.add(group_key)
-                try:
-                    await _send_reply(
-                        event,
-                        f"系统调用太频繁（全局限制 {self.max_calls} RPM），请稍后再试。",
-                    )
-                except Exception:
-                    LOG.exception("发送全局限流提示失败")
-            return False
-
         self._window.append(now)
         return True
 
     def __call__(self, func: F) -> F:
-        if inspect.isasyncgenfunction(func):
-            @wraps(func)
-            async def gen_wrapper(*args: Any, **kwargs: Any):
-                event = _find_event(args, kwargs)
-                if event is not None and not await self._check(event):
-                    return
-                async for item in func(*args, **kwargs):
-                    yield item
-
-            return gen_wrapper  # type: ignore[return-value]
-
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any):
-            event = _find_event(args, kwargs)
-            if event is not None and not await self._check(event):
-                return None
-            return await func(*args, **kwargs)
-
-        return wrapper  # type: ignore[return-value]
+        return func
 
 
 TOTAL_CALLS_PER_MINUTE = 30
@@ -330,7 +250,7 @@ def command_rate_limit(
     *,
     name: str = "",
 ) -> Callable[[F], F]:
-    """为单条群指令叠加按群及全局两个限流窗口。"""
+    """为单条群指令记录调用（已取消限流拦截）。"""
 
     def decorator(func: F) -> F:
         command_name = name or func.__qualname__
@@ -339,19 +259,19 @@ def command_rate_limit(
             @wraps(func)
             async def tracked_gen(*args: Any, **kwargs: Any):
                 await _record_command_call(args, command_name)
+                total_call_limit._window.append(time.monotonic())
                 async for item in func(*args, **kwargs):
                     yield item
 
-            globally_limited = total_call_limit(tracked_gen)
-            return GroupRateLimiter(max_calls, period, name=command_name)(globally_limited)
+            return tracked_gen  # type: ignore[return-value]
 
         @wraps(func)
         async def tracked(*args: Any, **kwargs: Any):
             await _record_command_call(args, command_name)
+            total_call_limit._window.append(time.monotonic())
             return await func(*args, **kwargs)
 
-        globally_limited = total_call_limit(tracked)
-        return GroupRateLimiter(max_calls, period, name=command_name)(globally_limited)
+        return tracked  # type: ignore[return-value]
 
     return decorator
 
