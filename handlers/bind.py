@@ -417,7 +417,7 @@ class BindHandlers(BqyxServices):
             details,
         )
 
-    @filter.command("绑定游戏名", alias={"绑定角色名", "绑定角色"})
+    @filter.command("绑定游戏名", alias={"绑定角色名", "绑定角色", "绑定"})
     @error_reply
     @command_rate_limit(name="绑定游戏名")
     async def bind_game_name(self, event: AstrMessageEvent, name: str = ""):
@@ -425,7 +425,7 @@ class BindHandlers(BqyxServices):
         sender_id = str(event.get_sender_id() or "")
 
         target_name = extract_command_arg(
-            name, event, ("绑定游戏名", "绑定角色名", "绑定角色")
+            name, event, ("绑定游戏名", "绑定角色名", "绑定角色", "绑定")
         ).strip()
 
         # 私聊直接调起账号选择器或根据输入绑定
@@ -456,7 +456,7 @@ class BindHandlers(BqyxServices):
             return
 
         target_name = extract_command_arg(
-            name, event, ("绑定游戏名", "绑定角色名", "绑定角色")
+            name, event, ("绑定游戏名", "绑定角色名", "绑定角色", "绑定")
         ).strip()
         if not target_name:
             tag = md_cmd_input("/绑定游戏名", "绑定游戏名")
@@ -510,6 +510,8 @@ class BindHandlers(BqyxServices):
         event: AstrMessageEvent,
         members: Any,
     ):
+        import urllib.parse
+
         member_list = list(members)
         if not member_list:
             raise BotError("当前军队暂无成员数据。")
@@ -519,16 +521,20 @@ class BindHandlers(BqyxServices):
             member_list,
             key=lambda m: (
                 int(m.contribution or 0),
-                int(m.detail.conDay or 0),
+                int(m.detail.conDay or 0) if (m.detail and hasattr(m.detail, "conDay")) else 0,
             ),
             reverse=True,
         )
 
         lines = []
         for i, m in enumerate(sorted_members, 1):
-            p_name = m.detail.playerName or f"UID_{m.uid}"
-            # 点击后把 绑定游戏名 xxx 填入输入框
-            link = md_cmd_example(p_name, f"绑定游戏名 {p_name}")
+            p_name = m.detail.playerName if (m.detail and hasattr(m.detail, "playerName")) else None
+            p_name = (p_name or f"UID_{m.uid}").strip()
+            # 优先使用 "绑定游戏名 {p_name}"；若编码后超过 100 字符限制，自动使用更紧凑等效的 "绑定 {p_name}"
+            cmd = f"绑定游戏名 {p_name}"
+            if len(urllib.parse.quote(cmd)) > 100:
+                cmd = f"绑定 {p_name}"
+            link = md_cmd_example(p_name, cmd)
             lines.append(f"{i:02d}. {link}")
 
         tip_lines = [

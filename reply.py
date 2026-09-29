@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import html
 import inspect
 import time
 import urllib.parse
@@ -38,6 +39,19 @@ HELP_MODULES = [
 ]
 
 
+def safe_quote_cmd(cmd: str, max_len: int = 100) -> str:
+    """对命令进行 URL 编码，并严格保证编码后长度不超过 max_len（QQ 官方限制 100 字符）。"""
+    cur_cmd = cmd.strip("\r\n")
+    encoded = urllib.parse.quote(cur_cmd)
+    if len(encoded) <= max_len:
+        return encoded
+    # 逐字截断直到 urlencode 后的长度不超过 max_len
+    while cur_cmd and len(encoded) > max_len:
+        cur_cmd = cur_cmd[:-1]
+        encoded = urllib.parse.quote(cur_cmd)
+    return encoded
+
+
 def md_cmd_enter(label: str, cmd: str) -> str:
     """生成交互指令标签（qqbot-cmd-enter 在官方平台不支持 show 属性，统一使用兼容的 md_cmd_example）。"""
     return md_cmd_example(label, cmd)
@@ -53,14 +67,16 @@ def md_cmd_input(label: str, cmd_prefix: str, add_space: bool | None = None) -> 
     if add_space is None:
         add_space = not (cleaned.isdigit() or cleaned in ("取消", "退出", "q", "Q"))
     prefix = (cleaned + " ") if add_space else cleaned
-    encoded = urllib.parse.quote(prefix)
-    return f'<qqbot-cmd-input text="{encoded}" show="{label}" reference="false" />'
+    encoded = safe_quote_cmd(prefix)
+    safe_show = html.escape(label.strip()[:50], quote=True)
+    return f'<qqbot-cmd-input text="{encoded}" show="{safe_show}" reference="false" />'
 
 
 def md_cmd_example(label: str, full_cmd: str) -> str:
     """生成点击后将完整示例填入输入框的 QQ Markdown 交互标签（参数生成，零正则）。"""
-    encoded = urllib.parse.quote(full_cmd.strip())
-    return f'<qqbot-cmd-input text="{encoded}" show="{label}" reference="false" />'
+    encoded = safe_quote_cmd(full_cmd.strip())
+    safe_show = html.escape(label.strip()[:50], quote=True)
+    return f'<qqbot-cmd-input text="{encoded}" show="{safe_show}" reference="false" />'
 
 
 def normalize_help_module(module: str) -> str:

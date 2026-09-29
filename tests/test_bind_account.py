@@ -602,6 +602,92 @@ async def test_bind_game_name_list_all_members_tilde():
 
 
 @pytest.mark.asyncio
+async def test_bind_game_name_long_names_and_xml_escape():
+    """测试长角色名（如军队19345前缀）回退为'绑定'以保证不超过100字符，且含&符号的角色名经过XML转义。"""
+    import xml.etree.ElementTree as ET
+    import urllib.parse
+    import re
+
+    members = [
+        SimpleNamespace(
+            uid="1001",
+            index=0,
+            detail=SimpleNamespace(playerName="【大招】冷静", conDay=1200),
+            contribution=100000,
+        ),
+        SimpleNamespace(
+            uid="1002",
+            index=1,
+            detail=SimpleNamespace(playerName="佳&璐", conDay=1400),
+            contribution=200000,
+        ),
+        SimpleNamespace(
+            uid="1003",
+            index=0,
+            detail=SimpleNamespace(playerName="【大招】饮风卧雨", conDay=500),
+            contribution=50000,
+        ),
+    ]
+    handler = DummyBindService(members)
+    event = FakeEvent(group_id="1001", user_id="456", message="绑定游戏名 ~")
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="~")
+    assert len(results) == 1
+    text = getattr(results[0], "text", str(results[0]))
+
+    # 1. 验证每个 qqbot-cmd-input 标签的 text 参数不超过 100 字符
+    tag_pattern = re.compile(r'<qqbot-cmd-input\s+([^/>]+)/>')
+    for match in tag_pattern.finditer(text):
+        tag_str = match.group(0)
+        # 验证 XML 解析合法（含 & 必须被转义为 &amp;）
+        elem = ET.fromstring(tag_str)
+        text_attr = elem.attrib["text"]
+        show_attr = elem.attrib["show"]
+        assert len(text_attr) <= 100
+        # 角色 佳&璐 的 show 属性正确解析为 佳&璐
+        if "佳" in show_attr:
+            assert show_attr == "佳&璐"
+
+    # 2. 验证长角色名使用了更紧凑的 "绑定" 指令
+    encoded_dazhao = urllib.parse.quote("绑定 【大招】冷静")
+    assert f'<qqbot-cmd-input text="{encoded_dazhao}" show="【大招】冷静" reference="false" />' in text
+
+    # 3. 验证 "佳&璐" 在 raw markdown 字符串中是经过 XML 转义的 &amp;
+    assert 'show="佳&amp;璐"' in text
+
+
+@pytest.mark.asyncio
+async def test_bind_short_alias_command():
+    """测试 '绑定' 短指令别名能够正常绑定成员角色。"""
+    members = [
+        SimpleNamespace(
+            uid="1001",
+            index=0,
+            detail=SimpleNamespace(playerName="【大招】冷静", conDay=1200),
+            contribution=100000,
+        ),
+    ]
+    handler = DummyBindService(members)
+    event = FakeEvent(group_id="1001", user_id="456", message="绑定 【大招】冷静")
+
+    fn = handler.bind_game_name
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event, name="【大招】冷静")
+    assert len(results) == 1
+    text = getattr(results[0], "text", str(results[0]))
+    assert "成功绑定游戏角色：【大招】冷静" in text
+    handler.store.set_user_bind.assert_awaited_once_with(
+        "1001", "456", "1001", 0
+    )
+
+
+@pytest.mark.asyncio
 async def test_bind_game_name_missing_param_has_tilde_usage():
     """测试 绑定游戏名 未传参时，错误提示中包含 '绑定游戏名 ~' 指令引导。"""
     handler = DummyBindService([])
@@ -719,7 +805,3 @@ async def test_on_private_message_rank_commands_passthrough():
         event = FakeEvent(group_id="", user_id="123456", message=cmd)
         results = await invoke_handler(handler.on_private_message, event)
         assert len(results) == 0, f"指令 {cmd} 应被放行，但收到了回复: {results}"
-
-
-
-
