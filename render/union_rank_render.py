@@ -31,6 +31,28 @@ class UnionRankRenderer:
     ) -> str:
         if not score_label:
             score_label = "日贡" if show_daily else "较昨日"
+
+        top_score = "—"
+        if rows:
+            first_row = rows[0]
+            if show_daily:
+                val = first_row.get("today_contribution")
+                top_score = (
+                    f"{val:,}"
+                    if isinstance(val, (int, float))
+                    else (str(val) if val is not None else "—")
+                )
+            else:
+                val = first_row.get("contribution_delta") or first_row.get("contribution")
+                top_score = (
+                    f"{val:,}"
+                    if isinstance(val, (int, float))
+                    else str(val or "—")
+                )
+
+        highlight_row = next((r for r in rows if r.get("highlight")), None)
+        highlight_rank = highlight_row["rank"] if highlight_row else None
+
         return self.env.get_template("union_rank.j2").render(
             title=title,
             date_label=date_label,
@@ -38,9 +60,11 @@ class UnionRankRenderer:
             captured_at=captured_at,
             show_daily=show_daily,
             score_label=score_label,
+            top_score=top_score,
+            highlight_rank=highlight_rank,
         )
 
-    async def to_png(self, html: str) -> bytes:
+    async def to_png(self, html: str, viewport: tuple[int, int] = (926, 1024)) -> bytes:
         from bqyx_api.utils.screenshot import html_to_png
 
-        return await html_to_png(html)
+        return await html_to_png(html, viewport=viewport)

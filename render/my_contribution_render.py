@@ -123,7 +123,12 @@ class MyContributionRenderer:
         uid: str | None = None,
         army_name: str | None = None,
         captured_at: str | None = None,
+        member_contribution: int | None = None,
+        total_member_contribution: int | None = None,
     ) -> str:
+        if member_contribution is None and total_member_contribution is not None:
+            member_contribution = total_member_contribution
+
         weeks, weekday_labels = build_month_grid(year, month, daily_records)
 
         recorded_values = [v for v in daily_records.values() if v is not None]
@@ -137,11 +142,17 @@ class MyContributionRenderer:
         title = f"{player_name} 的贡献墙"
         month_label = f"{year}年{month}月"
 
+        member_contribution_str = (
+            f"{member_contribution:,}" if member_contribution is not None else "—"
+        )
+
         return self.env.get_template("my_contribution.j2").render(
             title=title,
             player_name=player_name,
             month_label=month_label,
             total_contribution=f"{total_contribution:,}",
+            member_contribution=member_contribution_str,
+            total_member_contribution=member_contribution_str,
             recorded_days=recorded_days,
             perfect_days=perfect_days,
             avg_contribution=f"{avg_contribution:,}",

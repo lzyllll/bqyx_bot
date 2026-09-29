@@ -183,6 +183,10 @@ class QueryHandlers(BqyxServices):
                 raise UserNotBoundError()
             target_uid = str(bind.uid)
             target_arch_index = int(bind.arch_index)
+            target_member = next(
+                (m for m in raw_members if str(getattr(m, "uid", "")) == str(target_uid)),
+                None,
+            )
 
         today = now.date()
         today_str = today.isoformat()
@@ -205,11 +209,13 @@ class QueryHandlers(BqyxServices):
         # 2. 当月查询：今日通过 API 实时获取，且若昨日 member_daily 缺失则触发一次懒计算入库
         if is_current_month:
             for m in raw_members:
-                if str(m.uid) == str(target_uid):
-                    if m.detail:
-                        if m.detail.playerName and not player_name:
+                if str(getattr(m, "uid", "")) == str(target_uid):
+                    if target_member is None:
+                        target_member = m
+                    if getattr(m, "detail", None):
+                        if getattr(m.detail, "playerName", None) and not player_name:
                             player_name = str(m.detail.playerName).strip()
-                        if m.detail.conDay is not None:
+                        if getattr(m.detail, "conDay", None) is not None:
                             daily_records[today_str] = int(m.detail.conDay)
                     break
 
@@ -246,7 +252,37 @@ class QueryHandlers(BqyxServices):
                                 daily_records[yesterday_str] = cd.daily_contribution
                                 break
 
-        # 3. 角色名兜底
+        # 3. 获取总贡献（优先 member.contribution，兜底快照及结算累计）
+        member_contribution: int | None = None
+        if target_member is not None and getattr(target_member, "contribution", None) is not None:
+            try:
+                member_contribution = int(target_member.contribution)
+            except (ValueError, TypeError):
+                pass
+
+        if member_contribution is None:
+            for snap in reversed(
+                await self.store.list_member_snapshots_for_month(
+                    uid=target_uid, year=year, month=month, army_id=army_id
+                )
+            ):
+                if getattr(snap, "contribution", None) is not None:
+                    try:
+                        member_contribution = int(snap.contribution)
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+        if member_contribution is None and dailies:
+            for d in reversed(dailies):
+                if getattr(d, "end_of_day_total", None) is not None:
+                    try:
+                        member_contribution = int(d.end_of_day_total)
+                        break
+                    except (ValueError, TypeError):
+                        pass
+
+        # 4. 角色名兜底
         if not player_name:
             for snap in reversed(
                 await self.store.list_member_snapshots_for_month(
@@ -271,6 +307,7 @@ class QueryHandlers(BqyxServices):
             month=month,
             daily_records=daily_records,
             captured_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+            member_contribution=member_contribution,
         )
         png = await renderer.to_png(html)
         for res in await self.replies.build_my_contribution_wall(event, png):
