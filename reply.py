@@ -39,9 +39,8 @@ HELP_MODULES = [
 
 
 def md_cmd_enter(label: str, cmd: str) -> str:
-    """生成点击即直接发送执行的 QQ Markdown 交互标签（参数生成，零正则）。"""
-    encoded = urllib.parse.quote(cmd.strip())
-    return f'<qqbot-cmd-enter text="{encoded}" show="{label}" />'
+    """生成交互指令标签（qqbot-cmd-enter 在官方平台不支持 show 属性，统一使用兼容的 md_cmd_example）。"""
+    return md_cmd_example(label, cmd)
 
 
 def md_cmd_input(label: str, cmd_prefix: str, add_space: bool | None = None) -> str:

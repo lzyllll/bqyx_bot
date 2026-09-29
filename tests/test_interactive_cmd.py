@@ -12,7 +12,7 @@ from astrbot_plugin_bqyx.reply import (
 
 def test_md_cmd_helpers():
     tag_enter = md_cmd_enter("张三", "1")
-    assert tag_enter == '<qqbot-cmd-enter text="1" show="张三" />'
+    assert tag_enter == '<qqbot-cmd-input text="1" show="张三" reference="false" />'
 
     tag_input = md_cmd_input("/绑定军队", "绑定军队")
     assert tag_input == '<qqbot-cmd-input text="%E7%BB%91%E5%AE%9A%E5%86%9B%E9%98%9F%20" show="/绑定军队" reference="false" />'

@@ -22,7 +22,7 @@ from ..parsing import (
     parse_choice_index,
     parse_format,
 )
-from ..reply import md_cmd_enter, md_cmd_example, md_cmd_input
+from ..reply import md_cmd_example, md_cmd_input
 
 
 def pick_member_for_uid(members: Any, uid: str) -> Any:
@@ -95,18 +95,18 @@ class BindHandlers(BqyxServices):
 
         # 5. 如果是普通打招呼或其它消息，回复当前绑定的角色状态卡片和快捷按钮
         p_name = current_bind.player_name or f"UID_{current_bind.uid}"
-        btn_switch = md_cmd_enter("切换账号", "切换账号")
-        btn_info = md_cmd_enter("我的信息", "我的信息")
-        btn_daily = md_cmd_enter("我的日贡", "我的日贡")
-        btn_dps = md_cmd_enter("我的战力", "我的战力")
-        btn_things = md_cmd_enter("我的物品", "我的物品")
-        btn_bind = md_cmd_enter("我的绑定", "我的绑定")
+        btn_switch = md_cmd_example("切换账号", "切换账号")
+        btn_info = md_cmd_example("我的信息", "我的信息")
+        btn_daily = md_cmd_example("我的日贡", "我的日贡")
+        btn_dps = md_cmd_example("我的战力", "我的战力")
+        btn_things = md_cmd_example("我的物品", "我的物品")
+        btn_bind = md_cmd_example("我的绑定", "我的绑定")
 
         card_md = (
             f"> 💡 **爆枪英雄私聊助手**\n"
             f"> 当前绑定角色：**{p_name}** (UID: `{current_bind.uid}`, 存档: `{current_bind.arch_index}`)\n"
             f">\n"
-            f"> 快捷功能（点击直接发送）：\n"
+            f"> 快捷功能（点击填入）：\n"
             f"> • {btn_info}　• {btn_daily}\n"
             f"> • {btn_dps}　• {btn_things}\n"
             f"> • {btn_bind}　• {btn_switch}\n"
@@ -206,7 +206,7 @@ class BindHandlers(BqyxServices):
         await self.store.set_private_user_bind(
             qq_id, selected_uid, selected_arch, selected_name
         )
-        btn_switch = md_cmd_enter("切换账号", "切换账号")
+        btn_switch = md_cmd_example("切换账号", "切换账号")
         yield self.replies.markdown_success(
             event,
             f"私聊已成功绑定角色：{selected_name}",
@@ -223,7 +223,7 @@ class BindHandlers(BqyxServices):
         group_id = str(event.get_group_id() or "")
         if not group_id:
             tag_name = md_cmd_input("绑定游戏名", "绑定游戏名")
-            tag_switch = md_cmd_enter("切换账号", "切换账号")
+            tag_switch = md_cmd_example("切换账号", "切换账号")
             raise BotError(f"私聊无需绑定军队。如需绑定或切换角色，请使用 {tag_name} 或 {tag_switch}。")
 
         clean_army_id = extract_command_arg(
@@ -298,7 +298,7 @@ class BindHandlers(BqyxServices):
             except Exception:
                 pass
             await self.store.set_private_user_bind(qq_id, resolved_uid, 0, player_name)
-            btn_switch = md_cmd_enter("切换账号", "切换账号")
+            btn_switch = md_cmd_example("切换账号", "切换账号")
             yield self.replies.markdown_success(
                 event,
                 f"私聊已成功绑定游戏角色：{player_name}",
@@ -372,7 +372,7 @@ class BindHandlers(BqyxServices):
             except Exception:
                 pass
             await self.store.set_private_user_bind(qq_id, uid, 0, player_name)
-            btn_switch = md_cmd_enter("切换账号", "切换账号")
+            btn_switch = md_cmd_example("切换账号", "切换账号")
             yield self.replies.markdown_success(
                 event,
                 f"私聊已成功绑定游戏账号：{clean_username}",
