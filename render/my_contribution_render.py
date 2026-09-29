@@ -161,7 +161,16 @@ class MyContributionRenderer:
             captured_at=captured_at,
         )
 
-    async def to_png(self, html: str, viewport: tuple[int, int] = (562, 820)) -> bytes:
+    async def to_png(
+        self,
+        html: str,
+        viewport: tuple[int, int] = (562, 820),
+        device_scale_factor: float = 2.0,
+    ) -> bytes:
         from bqyx_api.utils.screenshot import html_to_png
 
-        return await html_to_png(html, viewport=viewport)
+        return await html_to_png(
+            html,
+            viewport=viewport,
+            device_scale_factor=device_scale_factor,
+        )

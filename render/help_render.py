@@ -30,11 +30,18 @@ class HelpRenderer:
         )
 
     async def to_png(
-        self, html: str, viewport: tuple[int, int] = (780, 1500)
+        self,
+        html: str,
+        viewport: tuple[int, int] = (780, 1500),
+        device_scale_factor: float = 2.0,
     ) -> bytes:
         from bqyx_api.utils.screenshot import html_to_png
 
-        return await html_to_png(html, viewport=viewport)
+        return await html_to_png(
+            html,
+            viewport=viewport,
+            device_scale_factor=device_scale_factor,
+        )
 
 
 async def render_help_image(

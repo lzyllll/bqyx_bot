@@ -367,7 +367,10 @@ class QueryHandlers(BqyxServices):
         format_type = parse_format(event.message_str, "文本")
         user, army_id = await self._get_army(group_id)
         members = (await user.get_members(army_id)).sort(
-            key=lambda m: m.detail.conDay,
+            key=lambda m: (
+                int(getattr(m, "contribution", 0) or 0),
+                int(getattr(getattr(m, "detail", None), "conDay", 0) or 0),
+            ),
             reverse=True,
         )
         bind = await self.optional_bind(group_id, str(event.get_sender_id()))
@@ -426,7 +429,10 @@ class QueryHandlers(BqyxServices):
         target_id = int(raw_id)
         user = await self.account.get_user()
         members = (await user.get_members(target_id)).sort(
-            key=lambda m: m.detail.conDay,
+            key=lambda m: (
+                int(getattr(m, "contribution", 0) or 0),
+                int(getattr(getattr(m, "detail", None), "conDay", 0) or 0),
+            ),
             reverse=True,
         )
         group_id = str(event.get_group_id() or "")
@@ -656,8 +662,16 @@ class QueryHandlers(BqyxServices):
             raise GroupOnlyError()
 
         user, army_id = await self._get_army(group_id)
-        members = (await user.get_members(army_id)).filter(
-            lambda m: kind.below_limit(m, limit)
+        members = (
+            (await user.get_members(army_id))
+            .filter(lambda m: kind.below_limit(m, limit))
+            .sort(
+                key=lambda m: (
+                    kind.value_of(m),
+                    int(getattr(m, "contribution", 0) or 0),
+                ),
+                reverse=True,
+            )
         )
  
         if not members:
@@ -715,8 +729,16 @@ class QueryHandlers(BqyxServices):
             raise GroupOnlyError()
 
         user, army_id = await self._get_army(group_id)
-        members = (await user.get_members(army_id)).filter(
-            lambda m: kind.below_limit(m, limit)
+        members = (
+            (await user.get_members(army_id))
+            .filter(lambda m: kind.below_limit(m, limit))
+            .sort(
+                key=lambda m: (
+                    kind.value_of(m),
+                    int(getattr(m, "contribution", 0) or 0),
+                ),
+                reverse=True,
+            )
         )
         if not members:
             yield event.plain_result(f"太棒了！没有人{kind.label}低于 {limit}。")
