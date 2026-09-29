@@ -68,7 +68,15 @@ class BindHandlers(BqyxServices):
             return
 
         msg_str = (event.message_str or "").strip()
+        if not msg_str:
+            return
+
+        # 若以指令前缀 / 或 # 开头，直接放行给指令系统处理
+        if msg_str.startswith(("/", "#")):
+            return
+
         cmd_body = msg_str.lstrip("/#").strip()
+        cmd_lower = cmd_body.lower()
 
         # 1. 检查是否为切换账号/换绑指令
         is_switch_cmd = any(
@@ -85,12 +93,17 @@ class BindHandlers(BqyxServices):
                 yield res
             return
 
-        # 4. 如果已经绑定过，且当前输入是其它指令（如 我的信息、我的日贡、我的战力、帮助、查等），放行给具体 handler 处理，绝不弹窗打扰！
+        # 4. 如果已经绑定过，且当前输入是其它指令（涵盖排行、个人、军队、统计等全部指令），放行给具体 handler 处理，绝不弹窗打扰！
         command_prefixes = (
-            "我的", "查", "帮助", "help", "统计", "union", "members",
-            "dps", "贡献", "日贡", "周贡", "物品", "战力", "绑定"
+            # 基础与个人
+            "我的", "查", "帮助", "help", "统计", "绑定", "免at",
+            "战力", "贡献", "日贡", "周贡", "物品", "修罗", "争霸", "成员",
+            # 排行与军队相关
+            "今日", "昨日", "实时", "本周", "上周", "军队", "排行",
+            # 英文指令
+            "union", "members", "domain", "pk", "dps",
         )
-        if any(cmd_body.startswith(p) for p in command_prefixes):
+        if any(cmd_lower.startswith(p) for p in command_prefixes):
             return
 
         # 5. 如果是普通打招呼或其它消息，回复当前绑定的角色状态卡片和快捷按钮
@@ -100,7 +113,7 @@ class BindHandlers(BqyxServices):
         btn_daily = md_cmd_example("我的日贡", "我的日贡")
         btn_dps = md_cmd_example("我的战力", "我的战力")
         btn_things = md_cmd_example("我的物品", "我的物品")
-        btn_bind = md_cmd_example("我的绑定", "我的绑定")
+        btn_rank = md_cmd_example("今日日贡排行", "今日日贡排行")
 
         card_md = (
             f"> 💡 **爆枪英雄私聊助手**\n"
@@ -109,7 +122,7 @@ class BindHandlers(BqyxServices):
             f"> 快捷功能（点击填入）：\n"
             f"> • {btn_info}　• {btn_daily}\n"
             f"> • {btn_dps}　• {btn_things}\n"
-            f"> • {btn_bind}　• {btn_switch}\n"
+            f"> • {btn_rank}　• {btn_switch}\n"
             f">\n"
             f"> 💬 如需更换绑定的角色，请点击上方 {btn_switch}。"
         )

@@ -696,4 +696,30 @@ async def test_check_my_bind_private():
     assert "测试角色" in text
 
 
+@pytest.mark.asyncio
+async def test_on_private_message_rank_commands_passthrough():
+    handler = DummyBindService([])
+    from astrbot_plugin_bqyx.models import PrivateUserBind
+    handler.store.get_private_user_bind = AsyncMock(
+        return_value=PrivateUserBind(qq_id="123456", uid="999", arch_index=2, player_name="测试角色")
+    )
+    # 排行相关指令应当直接放行（无任何返回，交给具体指令 handler）
+    for cmd in (
+        "今日日贡排行",
+        "昨日日贡排行",
+        "实时军队排行",
+        "军队排行",
+        "本周周贡排行",
+        "上周周贡排行",
+        "昨日贡献",
+        "军队信息",
+        "/今日日贡排行",
+        "#军队排行",
+    ):
+        event = FakeEvent(group_id="", user_id="123456", message=cmd)
+        results = await invoke_handler(handler.on_private_message, event)
+        assert len(results) == 0, f"指令 {cmd} 应被放行，但收到了回复: {results}"
+
+
+
 
