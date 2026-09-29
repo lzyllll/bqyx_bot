@@ -56,3 +56,10 @@
 | `arch_index` | `BQYX_ARCH_INDEX` | 代理账号存档槽位 (0-7) | `4` |
 | `snapshot_retention_days` | `BQYX_SNAPSHOT_RETENTION_DAYS` | 成员快照保留天数 | `63` |
 | `union_snapshot_retention_days` | `BQYX_UNION_SNAPSHOT_RETENTION_DAYS` | 军队排行保留天数 | `15` |
+
+---
+
+## 文档与排障指南
+
+- [QQ 官方机器人交互标签 `qqbot-cmd-input` 解析失败排查与优化指南](docs/qqbot_cmd_input_diagnostics.md)
+- [QQ 官方机器人接口超时与 DNS/MTU 诊断优化指南](docs/qqofficial_timeout_diagnostics.md)
