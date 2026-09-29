@@ -8,7 +8,13 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import MemberDaily, MemberSnapshot, UnionSnapshot, UserBind
+from .models import (
+    MemberDaily,
+    MemberSnapshot,
+    PrivateUserBind,
+    UnionSnapshot,
+    UserBind,
+)
 
 SHANGHAI = timezone(timedelta(hours=8))
 COMMAND_STATS_RETENTION_MONTHS = 2
@@ -117,6 +123,103 @@ class SqliteStore:
             (str(group_id),),
         )
         return [self._row_to_bind(row) for row in rows]
+
+    async def get_private_user_bind(self, qq_id: str) -> PrivateUserBind | None:
+        row = await self._run(
+            self._fetchone,
+            """
+            SELECT qq_id, uid, arch_index, player_name
+            FROM private_user_bind
+            WHERE qq_id = ?
+            """,
+            (str(qq_id),),
+        )
+        return self._row_to_private_bind(row) if row else None
+
+    async def set_private_user_bind(
+        self,
+        qq_id: str,
+        uid: str,
+        arch_index: int,
+        player_name: str | None = None,
+    ) -> None:
+        await self._run(
+            self._execute,
+            """
+            INSERT INTO private_user_bind (qq_id, uid, arch_index, player_name, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(qq_id) DO UPDATE SET
+                uid = excluded.uid,
+                arch_index = excluded.arch_index,
+                player_name = excluded.player_name,
+                updated_at = excluded.updated_at
+            """,
+            (str(qq_id), str(uid), int(arch_index), player_name, _utc_now()),
+        )
+
+    async def list_private_user_binds(self) -> list[PrivateUserBind]:
+        rows = await self._run(
+            self._fetchall,
+            """
+            SELECT qq_id, uid, arch_index, player_name
+            FROM private_user_bind
+            ORDER BY qq_id
+            """,
+        )
+        return [self._row_to_private_bind(row) for row in rows]
+
+    async def list_accounts_by_qq(self, qq_id: str) -> list[tuple[str, int, str | None]]:
+        """按 qq_id 聚合该用户在群绑定的账号与私聊绑定账号，去重返回 [(uid, arch_index, player_name), ...]"""
+        bind_rows = await self._run(
+            self._fetchall,
+            """
+            SELECT DISTINCT uid, arch_index
+            FROM user_bind
+            WHERE qq_id = ?
+            ORDER BY updated_at DESC
+            """,
+            (str(qq_id),),
+        )
+        private_bind = await self.get_private_user_bind(qq_id)
+
+        seen: set[tuple[str, int]] = set()
+        accounts: list[tuple[str, int, str | None]] = []
+
+        if private_bind:
+            key = (private_bind.uid, private_bind.arch_index)
+            seen.add(key)
+            accounts.append((private_bind.uid, private_bind.arch_index, private_bind.player_name))
+
+        for row in bind_rows:
+            uid = str(row[0])
+            arch_index = int(row[1])
+            key = (uid, arch_index)
+            if key not in seen:
+                seen.add(key)
+                name_row = await self._run(
+                    self._fetchone,
+                    """
+                    SELECT nickname FROM member_snapshot
+                    WHERE uid = ? AND arch_index = ?
+                    ORDER BY captured_at DESC LIMIT 1
+                    """,
+                    (uid, arch_index),
+                )
+                p_name = str(name_row[0]) if name_row else None
+                if not p_name:
+                    daily_row = await self._run(
+                        self._fetchone,
+                        """
+                        SELECT nickname FROM member_daily
+                        WHERE uid = ?
+                        ORDER BY computed_at DESC LIMIT 1
+                        """,
+                        (uid,),
+                    )
+                    p_name = str(daily_row[0]) if daily_row else None
+                accounts.append((uid, arch_index, p_name))
+
+        return accounts
 
     async def merge_user_binds(
         self,
@@ -437,6 +540,13 @@ class SqliteStore:
                     updated_at TEXT NOT NULL,
                     PRIMARY KEY (group_id, qq_id)
                 );
+                CREATE TABLE IF NOT EXISTS private_user_bind (
+                    qq_id TEXT PRIMARY KEY,
+                    uid TEXT NOT NULL,
+                    arch_index INTEGER NOT NULL DEFAULT 0,
+                    player_name TEXT,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS exclude_at (
                     group_id TEXT NOT NULL,
                     qq_id TEXT NOT NULL,
@@ -640,6 +750,15 @@ class SqliteStore:
             qq_id=str(row[1]),
             uid=str(row[2]),
             arch_index=int(row[3]),
+        )
+
+    @staticmethod
+    def _row_to_private_bind(row: tuple[Any, ...]) -> PrivateUserBind:
+        return PrivateUserBind(
+            qq_id=str(row[0]),
+            uid=str(row[1]),
+            arch_index=int(row[2]),
+            player_name=str(row[3]) if row[3] is not None else None,
         )
 
     @staticmethod

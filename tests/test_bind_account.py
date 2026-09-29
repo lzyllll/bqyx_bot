@@ -580,9 +580,10 @@ async def test_bind_game_name_list_all_members_tilde():
     assert len(results) == 1
     text = getattr(results[0], "text", str(results[0]))
 
-    # 包含小字 <sub> 标签
-    assert "<sub>" in text and "</sub>" in text
-    # 包含两列排版和序号（按总贡献降序排序：无双战神 -> 逍遥剑仙 -> 落叶秋风）
+    # 引用样式小字
+    assert "> " in text
+    assert "<sub>" not in text and "</sub>" not in text
+    # 包含单列排版和序号（按总贡献降序排序：无双战神 -> 逍遥剑仙 -> 落叶秋风）
     assert "01." in text
     assert "02." in text
     assert "03." in text
@@ -611,6 +612,85 @@ async def test_bind_game_name_missing_param_has_tilde_usage():
     assert len(results) == 1
     text = getattr(results[0], "text", str(results[0]))
     assert "绑定游戏名 ~" in text
+
+
+@pytest.mark.asyncio
+async def test_on_private_message_no_accounts():
+    handler = DummyBindService([])
+    handler.store.list_accounts_by_qq = AsyncMock(return_value=[])
+    event = FakeEvent(group_id="", user_id="123456", message="你好")
+
+    results = await invoke_handler(handler.on_private_message, event)
+    assert len(results) == 1
+    text = getattr(results[0], "text", str(results[0]))
+    assert "未查询到与 QQ `123456` 关联的游戏账号" in text
+
+
+@pytest.mark.asyncio
+async def test_on_private_message_select_and_bind():
+    handler = DummyBindService([])
+    handler.store.list_accounts_by_qq = AsyncMock(return_value=[
+        ("uid_1", 0, "角色A"),
+        ("uid_2", 1, "角色B"),
+    ])
+    handler.store.get_private_user_bind = AsyncMock(return_value=None)
+    handler.store.set_private_user_bind = AsyncMock()
+
+    from astrbot_plugin_bqyx.context import SessionResult
+    handler.wait_session_reply = AsyncMock(return_value=SessionResult(ok=True, text="1"))
+
+    event = FakeEvent(group_id="", user_id="123456", message="绑定")
+    results = await invoke_handler(handler.on_private_message, event)
+
+    assert len(results) == 2
+    prompt_text = getattr(results[0], "text", str(results[0]))
+    assert "角色A" in prompt_text
+    assert "角色B" in prompt_text
+
+    success_text = getattr(results[1], "text", str(results[1]))
+    assert "私聊已成功绑定角色：角色A" in success_text
+    handler.store.set_private_user_bind.assert_awaited_once_with(
+        "123456", "uid_1", 0, "角色A"
+    )
+
+
+@pytest.mark.asyncio
+async def test_on_private_message_cancel():
+    handler = DummyBindService([])
+    handler.store.list_accounts_by_qq = AsyncMock(return_value=[
+        ("uid_1", 0, "角色A"),
+    ])
+    handler.store.get_private_user_bind = AsyncMock(return_value=None)
+
+    from astrbot_plugin_bqyx.context import SessionResult
+    handler.wait_session_reply = AsyncMock(return_value=SessionResult(ok=False, cancelled=True))
+
+    event = FakeEvent(group_id="", user_id="123456", message="绑定")
+    results = await invoke_handler(handler.on_private_message, event)
+
+    assert len(results) == 2
+    assert "已取消私聊账号选择" in getattr(results[1], "text", str(results[1]))
+
+
+@pytest.mark.asyncio
+async def test_check_my_bind_private():
+    handler = DummyBindService([])
+    from astrbot_plugin_bqyx.models import PrivateUserBind
+    handler.store.get_private_user_bind = AsyncMock(
+        return_value=PrivateUserBind(qq_id="123456", uid="999", arch_index=2, player_name="测试角色")
+    )
+    event = FakeEvent(group_id="", user_id="123456", message="我的绑定")
+
+    fn = handler.check_my_bind
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+
+    results = await invoke_handler(fn, handler, event)
+    assert len(results) == 1
+    text = getattr(results[0], "text", str(results[0]))
+    assert "私聊已绑定角色信息" in text
+    assert "999" in text
+    assert "测试角色" in text
 
 
 

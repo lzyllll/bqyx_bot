@@ -48,6 +48,111 @@ class BindHandlers(BqyxServices):
             future.set_result(event)
             event.stop_event()
 
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def on_private_message(self, event: AstrMessageEvent):
+        """私人聊天适配：获取 QQ 关联的所有账号，通过会话选择器选择绑定。"""
+        msg_str = (event.message_str or "").strip()
+        # 若是常规以 / 或 # 开头的指令且并非绑定/切换相关，则不在此拦截，放行给具体指令
+        if msg_str.startswith(("/", "#")):
+            cmd_body = msg_str.lstrip("/#").strip()
+            if not any(cmd_body.startswith(k) for k in ("绑定", "选择账号", "切换账号", "我的账号")):
+                return
+
+        qq_id = str(event.get_sender_id() or "")
+        if not qq_id:
+            return
+
+        # 获取该 QQ 关联的所有游戏账号 (uid, arch_index, player_name)
+        accounts_raw = await self.store.list_accounts_by_qq(qq_id)
+        if not accounts_raw:
+            tag_name = md_cmd_input("/绑定游戏名", "绑定游戏名")
+            tag_uid = md_cmd_input("/绑定uid", "绑定uid")
+            md_text = (
+                "> 💡 **私聊账号绑定**\n"
+                f"> 未查询到与 QQ `{qq_id}` 关联的游戏账号。\n"
+                f"> 请先在已加入的军队群中使用 {tag_name} 或 {tag_uid} 绑定角色，之后即可在私聊中选择切换绑定账号。"
+            )
+            yield self.replies.markdown_result(event, md_text)
+            return
+
+        accounts: list[tuple[str, int, str]] = []
+        user = None
+        for uid, arch_index, p_name in accounts_raw:
+            final_name = p_name
+            if not final_name:
+                try:
+                    if user is None:
+                        user = await self.account.get_user()
+                    acc = await user.get_account(uid, arch_index)
+                    final_name = getattr(acc, "title", None) or f"UID_{uid}"
+                except Exception:
+                    final_name = f"UID_{uid}"
+            accounts.append((uid, arch_index, final_name))
+
+        current_bind = await self.store.get_private_user_bind(qq_id)
+
+        lines = []
+        for i, (uid, arch_index, name) in enumerate(accounts, 1):
+            is_current = (
+                current_bind is not None
+                and current_bind.uid == uid
+                and current_bind.arch_index == arch_index
+            )
+            current_tag = " `[当前已绑定]`" if is_current else ""
+            btn = md_cmd_input(name, str(i))
+            lines.append(f"> {i}. {btn} (UID: `{uid}`, 存档: `{arch_index}`){current_tag}")
+
+        cancel_btn = md_cmd_input("取消", "取消")
+        selector_md = (
+            f"> 💡 **私聊游戏账号选择 (共 {len(accounts)} 个)**\n"
+            f"> 检测到与您 QQ 关联的账号，请回复序号进行绑定：\n"
+            f">\n"
+            + "\n".join(lines)
+            + "\n>\n"
+            f"> 💬 30秒内回复序号（如 1）或点击角色名选择，回复“取消”或点击 {cancel_btn} 退出。"
+        )
+        yield self.replies.markdown_result(event, selector_md)
+
+        session_res = await self.wait_session_reply(
+            event,
+            timeout=30,
+            cancel_words=["取消", "退出", "q", "Q"],
+        )
+
+        if session_res.cancelled:
+            yield self.replies.markdown_warn(event, "已取消私聊账号选择。")
+            return
+        if session_res.timed_out:
+            yield self.replies.markdown_warn(event, "等待选择超时，已自动退出。")
+            return
+        if not session_res.ok:
+            return
+
+        choice_idx = parse_choice_index(session_res.text, len(accounts))
+        choice = (choice_idx - 1) if choice_idx is not None else None
+        if choice is None and session_res.text:
+            reply_name = session_res.text.strip().lower()
+            for idx, (_, _, a_name) in enumerate(accounts):
+                if a_name.strip().lower() == reply_name:
+                    choice = idx
+                    break
+
+        if choice is None:
+            yield self.replies.markdown_warn(
+                event, f"输入序号「{session_res.text}」无效，已退出选择。"
+            )
+            return
+
+        selected_uid, selected_arch, selected_name = accounts[choice]
+        await self.store.set_private_user_bind(
+            qq_id, selected_uid, selected_arch, selected_name
+        )
+        yield self.replies.markdown_success(
+            event,
+            f"私聊已成功绑定角色：{selected_name}",
+            [f"UID: `{selected_uid}`", f"存档序号: `{selected_arch}`"],
+        )
+
     @filter.command("绑定军队")
     @error_reply
     async def bind_army(self, event: AstrMessageEvent, army_id: str = ""):
@@ -271,58 +376,57 @@ class BindHandlers(BqyxServices):
         if not member_list:
             raise BotError("当前军队暂无成员数据。")
 
-        # 先按总贡献降序，再按日贡献降序
+        # 先按总贡献降序，再按日贡献降序，直接使用对象属性访问
         sorted_members = sorted(
             member_list,
             key=lambda m: (
-                int(getattr(m, "contribution", 0) or 0),
-                int(getattr(getattr(m, "detail", None), "conDay", 0) or 0),
+                int(m.contribution or 0),
+                int(m.detail.conDay or 0),
             ),
             reverse=True,
         )
 
-        items = []
+        lines = []
         for i, m in enumerate(sorted_members, 1):
-            p_name = (
-                getattr(getattr(m, "detail", None), "playerName", None)
-                or f"UID_{getattr(m, 'uid', '')}"
-            )
+            p_name = m.detail.playerName or f"UID_{m.uid}"
             # 点击后把 绑定游戏名 xxx 填入输入框
             link = md_cmd_example(p_name, f"绑定游戏名 {p_name}")
-            items.append(f"{i:02d}. {link}")
+            lines.append(f"{i:02d}. {link}")
 
-        row_lines = []
-        for i in range(0, len(items), 2):
-            left = items[i]
-            if i + 1 < len(items):
-                right = items[i + 1]
-                row_lines.append(f"<sub>{left}\u3000\u3000{right}</sub>")
-            else:
-                row_lines.append(f"<sub>{left}</sub>")
-
-        body = "\n".join(row_lines)
-        md_text = (
-            f"> 💡 **军团成员快捷绑定 (共 {len(sorted_members)} 人)**\n"
-            f"> 点击下方蓝色游戏名，自动填入绑定指令：\n\n"
-            f"{body}"
-        )
-        return self.replies.markdown_result(event, md_text)
+        tip_lines = [
+            f"> 💡 **军团成员快捷绑定 (共 {len(sorted_members)} 人)**",
+            "> 点击下方蓝色游戏名，自动填入绑定指令：",
+            "> ",
+        ]
+        tip_lines.extend(f"> {line}" for line in lines)
+        return self.replies.markdown_result(event, "\n".join(tip_lines))
 
     @filter.command("我的绑定")
     @error_reply
     @command_rate_limit(name="我的绑定")
     async def check_my_bind(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
         sender_id = str(event.get_sender_id() or "")
+        if not group_id:
+            p_bind = await self.store.get_private_user_bind(sender_id)
+            if not p_bind:
+                raise UserNotBoundError()
+            details = [f"UID: `{p_bind.uid}`", f"存档序号: `{p_bind.arch_index}`"]
+            if p_bind.player_name:
+                details.append(f"角色: `{p_bind.player_name}`")
+            yield self.replies.markdown_success(
+                event,
+                "私聊已绑定角色信息",
+                details,
+            )
+            return
+
         bind = await self.store.get_user_bind(group_id, sender_id)
         if not bind:
             raise UserNotBoundError()
         yield self.replies.markdown_success(
             event,
-            f"已绑定角色信息",
+            "已绑定角色信息",
             [f"UID: `{bind.uid}`", f"存档序号: `{bind.arch_index}`"],
         )
 
@@ -331,32 +435,43 @@ class BindHandlers(BqyxServices):
     @my_info_limit
     async def check_my_contribution(self, event: AstrMessageEvent):
         group_id = str(event.get_group_id() or "")
-        if not group_id:
-            raise GroupOnlyError()
-
         sender_id = str(event.get_sender_id() or "")
-        bind = await self.store.get_user_bind(group_id, sender_id)
-        if not bind:
-            raise UserNotBoundError()
+        saved_name = None
+        if not group_id:
+            p_bind = await self.store.get_private_user_bind(sender_id)
+            if not p_bind:
+                raise UserNotBoundError()
+            bind_uid = p_bind.uid
+            bind_arch = p_bind.arch_index
+            saved_name = p_bind.player_name
+        else:
+            bind = await self.store.get_user_bind(group_id, sender_id)
+            if not bind:
+                raise UserNotBoundError()
+            bind_uid = bind.uid
+            bind_arch = bind.arch_index
 
         format_type = parse_format(event.message_str, "图片")
         user = await self.account.get_user()
-        account = await user.get_account(bind.uid, bind.arch_index)
+        account = await user.get_account(bind_uid, bind_arch)
         union_data = self.union_defines.hydrate(
             UnionSave.from_archive(account.data),
             archive_time=account.datetime,
         )
 
         title = "我的贡献"
-        army_id = await self.store.get_group_army(group_id)
-        if army_id is not None:
-            members = (await user.get_members(army_id)).filter(
-                lambda m: str(m.uid) == bind.uid
-            )
-            if members:
-                player_name = members[0].detail.playerName or ""
-                if player_name:
-                    title = f"{player_name} 的贡献"
+        if saved_name:
+            title = f"{saved_name} 的贡献"
+        elif group_id:
+            army_id = await self.store.get_group_army(group_id)
+            if army_id is not None:
+                members = (await user.get_members(army_id)).filter(
+                    lambda m: str(m.uid) == bind_uid
+                )
+                if members:
+                    player_name = members[0].detail.playerName or ""
+                    if player_name:
+                        title = f"{player_name} 的贡献"
 
         for res in await self.replies.build_contribution(
             event,

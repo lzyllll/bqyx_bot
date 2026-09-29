@@ -14,6 +14,14 @@ class UserBind:
 
 
 @dataclass(frozen=True)
+class PrivateUserBind:
+    qq_id: str
+    uid: str
+    arch_index: int
+    player_name: str | None = None
+
+
+@dataclass(frozen=True)
 class QQMember:
     qq_id: str
     nickname: str

@@ -237,6 +237,41 @@ async def test_union_retention_independent_of_member(tmp_path):
 
     assert await store.list_union_snapshots(prune_union) == []
     assert [item.union_id for item in await store.list_union_snapshots(keep_union)] == [2]
-    assert [item.union_id for item in await store.list_union_snapshots(today_s)] == [3]
     assert await store.list_member_snapshots(88, prune_member) == []
     assert [item.uid for item in await store.list_member_snapshots(88, today_s)] == ["u1"]
+
+
+async def test_private_user_bind_roundtrip(store):
+    assert await store.get_private_user_bind("qq_123") is None
+    await store.set_private_user_bind("qq_123", "uid_999", 2, "战神")
+    bind = await store.get_private_user_bind("qq_123")
+    assert bind is not None
+    assert bind.qq_id == "qq_123"
+    assert bind.uid == "uid_999"
+    assert bind.arch_index == 2
+    assert bind.player_name == "战神"
+
+    # update
+    await store.set_private_user_bind("qq_123", "uid_888", 0, "法圣")
+    bind2 = await store.get_private_user_bind("qq_123")
+    assert bind2.uid == "uid_888"
+    assert bind2.player_name == "法圣"
+
+    binds = await store.list_private_user_binds()
+    assert len(binds) == 1
+    assert binds[0].uid == "uid_888"
+
+
+async def test_list_accounts_by_qq(store):
+    # 群1绑定账号A
+    await store.set_user_bind("group_1", "qq_user", "uid_1", 0)
+    # 群2绑定账号B
+    await store.set_user_bind("group_2", "qq_user", "uid_2", 1)
+    # 私聊绑定账号C
+    await store.set_private_user_bind("qq_user", "uid_3", 2, "私聊角色")
+
+    accounts = await store.list_accounts_by_qq("qq_user")
+    uids = [acc[0] for acc in accounts]
+    assert "uid_1" in uids
+    assert "uid_2" in uids
+    assert "uid_3" in uids

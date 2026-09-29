@@ -559,17 +559,10 @@ class ReplyService:
         else:
             lines = []
             for i, m in enumerate(member_list, 1):
-                p_name = (
-                    getattr(getattr(m, "detail", None), "playerName", None)
-                    or f"UID_{getattr(m, 'uid', '')}"
-                )
+                p_name = m.detail.playerName or f"UID_{m.uid}"
                 btn = md_cmd_example(p_name, f"查贡献 {p_name}")
-                con_day = (
-                    getattr(getattr(m, "detail", None), "conDay", 0)
-                    if getattr(m, "detail", None)
-                    else 0
-                )
-                contrib = getattr(m, "contribution", 0) or 0
+                con_day = m.detail.conDay if m.detail else 0
+                contrib = m.contribution or 0
                 lines.append(f"{i}. {btn} (日贡: {con_day:,} | 总贡: {contrib:,})")
 
         title_text = title if "共" in title else f"{title} (共 {len(member_list)} 人)"

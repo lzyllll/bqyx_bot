@@ -368,8 +368,8 @@ class QueryHandlers(BqyxServices):
         user, army_id = await self._get_army(group_id)
         members = (await user.get_members(army_id)).sort(
             key=lambda m: (
-                int(getattr(m, "contribution", 0) or 0),
-                int(getattr(getattr(m, "detail", None), "conDay", 0) or 0),
+                int(m.contribution or 0),
+                int(m.detail.conDay or 0),
             ),
             reverse=True,
         )
@@ -430,8 +430,8 @@ class QueryHandlers(BqyxServices):
         user = await self.account.get_user()
         members = (await user.get_members(target_id)).sort(
             key=lambda m: (
-                int(getattr(m, "contribution", 0) or 0),
-                int(getattr(getattr(m, "detail", None), "conDay", 0) or 0),
+                int(m.contribution or 0),
+                int(m.detail.conDay or 0),
             ),
             reverse=True,
         )
@@ -668,12 +668,12 @@ class QueryHandlers(BqyxServices):
             .sort(
                 key=lambda m: (
                     kind.value_of(m),
-                    int(getattr(m, "contribution", 0) or 0),
+                    int(m.contribution or 0),
                 ),
                 reverse=True,
             )
         )
- 
+
         if not members:
             yield event.plain_result(f"太棒了！没有人{kind.label}低于 {limit}。")
             return
@@ -692,10 +692,7 @@ class QueryHandlers(BqyxServices):
 
         lines = []
         for i, m in enumerate(members, 1):
-            p_name = (
-                getattr(getattr(m, "detail", None), "playerName", None)
-                or f"UID_{getattr(m, 'uid', '')}"
-            )
+            p_name = m.detail.playerName or f"UID_{m.uid}"
             click_btn = md_cmd_example(p_name, f"查贡献 {p_name}")
             lines.append(f"{i}. {click_btn} (贡献: {kind.value_of(m)})")
 

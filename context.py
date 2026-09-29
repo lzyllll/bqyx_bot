@@ -88,6 +88,16 @@ class BqyxServices:
         return user, army_id
 
     async def optional_bind(self, group_id: str, qq_id: str) -> UserBind | None:
+        if not group_id:
+            p_bind = await self.store.get_private_user_bind(str(qq_id))
+            if p_bind:
+                return UserBind(
+                    group_id="",
+                    qq_id=p_bind.qq_id,
+                    uid=p_bind.uid,
+                    arch_index=p_bind.arch_index,
+                )
+            return None
         return await self.store.get_user_bind(str(group_id), str(qq_id))
 
     async def wait_session_reply(
@@ -154,7 +164,7 @@ class BqyxServices:
             for m in raw_members
             if target_lower
             in (
-                getattr(getattr(m, "detail", None), "playerName", None) or ""
+                m.detail.playerName or ""
             ).lower()
         ]
 
@@ -176,7 +186,7 @@ class BqyxServices:
         bound_matches: list[tuple[Any, list[str]]] = []
         for m in matches:
             m_uid = str(m.uid).strip()
-            m_idx = int(m.index) if getattr(m, "index", None) is not None else 0
+            m_idx = int(m.index) if hasattr(m, "index") and m.index is not None else 0
             key = (m_uid, m_idx)
             if key in bound_map:
                 bound_matches.append((m, bound_map[key]))
@@ -189,11 +199,8 @@ class BqyxServices:
             for m in unbound_matches:
                 ordered_matches.append(m)
                 idx = len(ordered_matches)
-                p_name = (
-                    getattr(getattr(m, "detail", None), "playerName", None)
-                    or target_name
-                )
-                contribution = getattr(m, "contribution", 0) or 0
+                p_name = m.detail.playerName or target_name
+                contribution = m.contribution or 0
                 lines.append(
                     f"{idx}. {md_cmd_input(p_name, str(idx))} (总贡献: {contribution:,})"
                 )
@@ -207,11 +214,8 @@ class BqyxServices:
             for m, qq_list in bound_matches:
                 ordered_matches.append(m)
                 idx = len(ordered_matches)
-                p_name = (
-                    getattr(getattr(m, "detail", None), "playerName", None)
-                    or target_name
-                )
-                contribution = getattr(m, "contribution", 0) or 0
+                p_name = m.detail.playerName or target_name
+                contribution = m.contribution or 0
                 if sender_id in qq_list:
                     bind_tag = " [当前你已绑定]"
                 elif qq_list:
@@ -252,11 +256,7 @@ class BqyxServices:
                 matched_indices = [
                     i
                     for i, m in enumerate(ordered_matches, 1)
-                    if (
-                        getattr(getattr(m, "detail", None), "playerName", None)
-                        or ""
-                    ).strip().lower()
-                    == reply_name
+                    if (m.detail.playerName or "").strip().lower() == reply_name
                 ]
                 if len(matched_indices) == 1:
                     idx = matched_indices[0]
