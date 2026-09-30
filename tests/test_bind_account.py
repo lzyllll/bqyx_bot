@@ -758,14 +758,24 @@ async def test_on_private_message_select_and_bind():
 
 
 @pytest.mark.asyncio
-async def test_on_private_message_switch_command_is_handled_by_command_handler():
+@pytest.mark.parametrize("command", ["切换账号", "/切换账号", "#切换账号"])
+async def test_on_private_message_switch_command_uses_single_selector(command):
     handler = DummyBindService([])
-    event = FakeEvent(group_id="", user_id="123456", message="切换账号")
+    handler.store.list_accounts_by_qq = AsyncMock(return_value=[
+        ("uid_1", 0, "角色A"),
+    ])
+    from astrbot_plugin_bqyx.context import SessionResult
+    handler.wait_session_reply = AsyncMock(
+        return_value=SessionResult(ok=True, text="1")
+    )
+    event = FakeEvent(group_id="", user_id="123456", message=command)
 
     results = await invoke_handler(handler.on_private_message, event)
 
-    assert results == []
-    handler.store.get_private_user_bind.assert_not_awaited()
+    assert len(results) == 2
+    assert "角色A" in getattr(results[0], "text", str(results[0]))
+    assert "私聊已成功绑定角色：角色A" in getattr(results[1], "text", str(results[1]))
+    handler.wait_session_reply.assert_awaited_once()
 
 
 @pytest.mark.asyncio

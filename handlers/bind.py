@@ -52,7 +52,6 @@ class BindHandlers(BqyxServices):
             future.set_result(event)
             event.stop_event()
 
-    @filter.command("切换账号", alias={"选择账号", "切换角色", "换绑", "选择角色"})
     @error_reply
     async def switch_account(self, event: AstrMessageEvent):
         """私聊中切换已绑定的游戏账号。"""
@@ -76,22 +75,24 @@ class BindHandlers(BqyxServices):
         if not msg_str:
             return
 
-        # 若以指令前缀 / 或 # 开头，直接放行给指令系统处理
-        if msg_str.startswith(("/", "#")):
-            return
-
-        if clean_reply_text(msg_str).isdigit():
-            return
-
         cmd_body = msg_str.lstrip("/#").strip()
         cmd_lower = cmd_body.lower()
 
-        # 1. 检查是否为切换账号/换绑指令
+        # 切换账号由本私聊入口统一处理，避免命令处理器与私聊适配器各建一个会话。
         is_switch_cmd = any(
             cmd_body.startswith(k)
             for k in ("切换账号", "选择账号", "切换角色", "换绑", "选择角色")
         )
         if is_switch_cmd:
+            async for res in self.switch_account(event):
+                yield res
+            return
+
+        # 若以指令前缀 / 或 # 开头，直接放行给其它指令系统处理
+        if msg_str.startswith(("/", "#")):
+            return
+
+        if clean_reply_text(msg_str).isdigit():
             return
 
         is_bind_trigger = cmd_body in ("绑定", "换号")
