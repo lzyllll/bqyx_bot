@@ -758,6 +758,17 @@ async def test_on_private_message_select_and_bind():
 
 
 @pytest.mark.asyncio
+async def test_on_private_message_switch_command_is_handled_by_command_handler():
+    handler = DummyBindService([])
+    event = FakeEvent(group_id="", user_id="123456", message="切换账号")
+
+    results = await invoke_handler(handler.on_private_message, event)
+
+    assert results == []
+    handler.store.get_private_user_bind.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_on_private_message_cancel():
     handler = DummyBindService([])
     handler.store.list_accounts_by_qq = AsyncMock(return_value=[

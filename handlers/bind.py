@@ -90,13 +90,17 @@ class BindHandlers(BqyxServices):
         is_switch_cmd = any(
             cmd_body.startswith(k)
             for k in ("切换账号", "选择账号", "切换角色", "换绑", "选择角色")
-        ) or (cmd_body in ("绑定", "换号"))
+        )
+        if is_switch_cmd:
+            return
+
+        is_bind_trigger = cmd_body in ("绑定", "换号")
 
         # 2. 查询当前是否已持久化绑定
         current_bind = await self.store.get_private_user_bind(qq_id)
 
         # 3. 如果是切换指令，或者尚未绑定过任何账号，进入选择器流程
-        if is_switch_cmd or current_bind is None:
+        if is_bind_trigger or current_bind is None:
             async for res in self._show_account_selector(event):
                 yield res
             return
