@@ -75,6 +75,9 @@ class BindHandlers(BqyxServices):
         if msg_str.startswith(("/", "#")):
             return
 
+        if msg_str.isdigit():
+            return
+
         cmd_body = msg_str.lstrip("/#").strip()
         cmd_lower = cmd_body.lower()
 

@@ -716,6 +716,17 @@ async def test_on_private_message_no_accounts():
 
 
 @pytest.mark.asyncio
+async def test_on_private_message_numeric_reply_is_ignored():
+    handler = DummyBindService([])
+    event = FakeEvent(group_id="", user_id="123456", message="123")
+
+    results = await invoke_handler(handler.on_private_message, event)
+
+    assert results == []
+    handler.store.get_private_user_bind.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_on_private_message_select_and_bind():
     handler = DummyBindService([])
     handler.store.list_accounts_by_qq = AsyncMock(return_value=[
