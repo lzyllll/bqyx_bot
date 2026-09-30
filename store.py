@@ -221,15 +221,28 @@ class SqliteStore:
 
         return accounts
 
-    async def get_user_army_id(self, uid: str) -> int | None:
-        """根据 UID 查询该玩家最近所在的军队 ID（优先查成员快照，兜底查日贡）。"""
-        row = await self._run(
-            self._fetchone,
-            "SELECT army_id FROM member_snapshot WHERE uid = ? ORDER BY captured_at DESC LIMIT 1",
-            (str(uid),),
-        )
+    async def get_user_army_id(
+        self, uid: str, arch_index: int | None = None
+    ) -> int | None:
+        """根据账号存档查询最近所在的军队 ID。"""
+        if arch_index is None:
+            snapshot_sql = (
+                "SELECT army_id FROM member_snapshot "
+                "WHERE uid = ? ORDER BY captured_at DESC LIMIT 1"
+            )
+            snapshot_params = (str(uid),)
+        else:
+            snapshot_sql = (
+                "SELECT army_id FROM member_snapshot "
+                "WHERE uid = ? AND arch_index = ? "
+                "ORDER BY captured_at DESC LIMIT 1"
+            )
+            snapshot_params = (str(uid), int(arch_index))
+        row = await self._run(self._fetchone, snapshot_sql, snapshot_params)
         if row:
             return int(row[0])
+        if arch_index is not None:
+            return None
         daily_row = await self._run(
             self._fetchone,
             "SELECT army_id FROM member_daily WHERE uid = ? ORDER BY computed_at DESC LIMIT 1",

@@ -38,7 +38,7 @@ class QueryHandlers(BqyxServices):
         elif qq_id:
             p_bind = await self.store.get_private_user_bind(str(qq_id))
             if p_bind:
-                army_id = await self.store.get_user_army_id(p_bind.uid)
+                army_id = await self.store.get_user_army_id(p_bind.uid, p_bind.arch_index)
         if army_id is None:
             raise ArmyNotBoundError()
         user = await self.account.get_user()
@@ -59,7 +59,11 @@ class QueryHandlers(BqyxServices):
             army_id = await self.store.get_group_army(group_id)
         else:
             bind = await self.store.get_private_user_bind(qq_id)
-            army_id = await self.store.get_user_army_id(bind.uid) if bind else None
+            army_id = (
+                await self.store.get_user_army_id(bind.uid, bind.arch_index)
+                if bind
+                else None
+            )
 
         if bind is None:
             raise UserNotBoundError()

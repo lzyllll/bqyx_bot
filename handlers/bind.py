@@ -5,7 +5,12 @@ from typing import Any
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from bqyx_api.archive.union import UnionSave
-from ..context import BqyxServices, MemberChoice, PendingSessionFilter
+from ..context import (
+    BqyxServices,
+    MemberChoice,
+    PendingSessionFilter,
+    clean_reply_text,
+)
 from ..errors import (
     ArmyNotBoundError,
     ArmyNotFoundError,
@@ -67,7 +72,7 @@ class BindHandlers(BqyxServices):
         if not qq_id:
             return
 
-        msg_str = (event.message_str or "").strip()
+        msg_str = (event.get_message_str() or "").strip()
         if not msg_str:
             return
 
@@ -75,7 +80,7 @@ class BindHandlers(BqyxServices):
         if msg_str.startswith(("/", "#")):
             return
 
-        if msg_str.isdigit():
+        if clean_reply_text(msg_str).isdigit():
             return
 
         cmd_body = msg_str.lstrip("/#").strip()

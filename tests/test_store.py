@@ -28,6 +28,22 @@ async def test_user_bind_includes_arch_index(store):
     assert bind.arch_index == 4
 
 
+async def test_user_army_id_follows_archive(store):
+    await store.replace_member_snapshots(
+        88,
+        "2026-08-23",
+        [MemberSnapshot(88, "2026-08-23", "u1", 0, "甲", 1, 1, 1, "t1")],
+    )
+    await store.replace_member_snapshots(
+        99,
+        "2026-08-23",
+        [MemberSnapshot(99, "2026-08-23", "u1", 1, "乙", 1, 1, 1, "t1")],
+    )
+
+    assert await store.get_user_army_id("u1", 0) == 88
+    assert await store.get_user_army_id("u1", 1) == 99
+
+
 async def test_merge_user_binds_counts(store):
     await store.set_user_bind("100", "1", "u1", 0)
     new, updated, unchanged = await store.merge_user_binds(

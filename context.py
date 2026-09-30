@@ -87,7 +87,7 @@ class BqyxServices:
         elif qq_id:
             p_bind = await self.store.get_private_user_bind(str(qq_id))
             if p_bind:
-                army_id = await self.store.get_user_army_id(p_bind.uid)
+                army_id = await self.store.get_user_army_id(p_bind.uid, p_bind.arch_index)
         if army_id is None:
             raise ArmyNotBoundError()
         user = await self.account.get_user()
@@ -132,7 +132,7 @@ class BqyxServices:
 
         try:
             next_event = await asyncio.wait_for(future, timeout=wait_timeout)
-            raw = (next_event.message_str or "").strip()
+            raw = (next_event.get_message_str() or "").strip()
             text = clean_reply_text(raw)
             if text in cancel_set:
                 return SessionResult(ok=False, cancelled=True)

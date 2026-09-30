@@ -48,6 +48,9 @@ class FakeEvent:
     def get_sender_id(self) -> str:
         return self.uid
 
+    def get_message_str(self) -> str:
+        return self.message_str
+
     def plain_result(self, text: str):
         return SimpleNamespace(type="plain", text=text)
 
@@ -718,7 +721,7 @@ async def test_on_private_message_no_accounts():
 @pytest.mark.asyncio
 async def test_on_private_message_numeric_reply_is_ignored():
     handler = DummyBindService([])
-    event = FakeEvent(group_id="", user_id="123456", message="123")
+    event = FakeEvent(group_id="", user_id="123456", message="[At:qq_official] 123")
 
     results = await invoke_handler(handler.on_private_message, event)
 
