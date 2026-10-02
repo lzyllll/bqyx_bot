@@ -11,7 +11,7 @@ sys.path.insert(0, str(PROJECT_ROOT.parent))
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "lib" / "bqyx_api"))
 
-from render.my_contribution_render import MyContributionRenderer
+from bqyx_api.render import MyContributionRenderer
 
 DB_PATH = Path("data/bqyx.db")
 OUTPUT_DIR = Path("test/output")

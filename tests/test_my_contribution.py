@@ -9,7 +9,7 @@ import pytest
 
 from astrbot_plugin_bqyx.config import Settings
 from astrbot_plugin_bqyx.models import MemberSnapshot
-from astrbot_plugin_bqyx.render import (
+from bqyx_api.render import (
     MyContributionRenderer,
     UnionRankRenderer,
     build_month_grid,

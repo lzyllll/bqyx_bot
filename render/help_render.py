@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .union_rank_render import TEMPLATE_DIR
+TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 
 def get_help_asset_path() -> Path:

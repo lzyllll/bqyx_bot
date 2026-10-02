@@ -7,7 +7,7 @@ sys.path.insert(0, str(PROJECT_ROOT.parent))
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "lib" / "bqyx_api"))
 
-from render.union_rank_render import UnionRankRenderer
+from bqyx_api.render import UnionRankRenderer
 
 async def main():
     renderer = UnionRankRenderer()

@@ -6,7 +6,7 @@ from typing import Any
 
 from astrbot.api.event import AstrMessageEvent, MessageEventResult, filter
 from bqyx_api.api.GameUser import GameUser
-from bqyx_api.render import PlayerHtmlRenderer
+from bqyx_api.render import MyContributionRenderer, PlayerHtmlRenderer
 
 from ..context import BqyxServices, MemberChoice
 from ..errors import (
@@ -25,7 +25,6 @@ from ..parsing import (
     parse_format_and_limit,
     parse_year_month,
 )
-from ..render import MyContributionRenderer
 from ..reply import md_cmd_example, md_cmd_input
 from ..schedule import as_shanghai
 

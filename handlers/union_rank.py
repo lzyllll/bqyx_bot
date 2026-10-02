@@ -19,7 +19,7 @@ from ..hooks import (
     yesterday_union_limit,
 )
 from ..models import UnionSnapshot
-from ..render.union_rank_render import UnionRankRenderer
+from bqyx_api.render import UnionRankRenderer
 from ..schedule import (
     SHANGHAI,
     as_shanghai,

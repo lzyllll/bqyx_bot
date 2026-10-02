@@ -5,7 +5,7 @@ import pytest
 
 from astrbot_plugin_bqyx.handlers.union_rank import _rank_rows
 from astrbot_plugin_bqyx.models import UnionSnapshot
-from astrbot_plugin_bqyx.render.union_rank_render import UnionRankRenderer
+from bqyx_api.render import UnionRankRenderer
 
 OUTPUT_DIR = Path(__file__).parent / "output"
 
