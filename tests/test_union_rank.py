@@ -233,3 +233,111 @@ def test_renderer_score_label_weekly():
     assert "周贡" in html
     assert "日贡" not in html
     assert "本军" in html
+
+
+from unittest.mock import AsyncMock, MagicMock
+from astrbot_plugin_bqyx.handlers.union_rank import UnionRankHandlers
+from astrbot_plugin_bqyx.reply import ReplyService
+from astrbot_plugin_bqyx.errors import GroupOnlyError, ParamError
+
+
+class FakeEvent:
+    def __init__(self, group_id: str = "1001", user_id: str = "456", message: str = ""):
+        self.gid = str(group_id)
+        self.uid = str(user_id)
+        self.message_str = message
+
+    def get_group_id(self) -> str:
+        return self.gid
+
+    def get_sender_id(self) -> str:
+        return self.uid
+
+    def plain_result(self, text: str):
+        return SimpleNamespace(type="plain", text=text)
+
+
+class DummyUnionRankService(UnionRankHandlers):
+    def __init__(self, tmp_path):
+        self.store = MagicMock()
+        self._template_map = {}
+        self.store.get_group_template = AsyncMock(side_effect=lambda gid: self._template_map.get(gid))
+
+        async def _set(gid, style):
+            self._template_map[gid] = style
+
+        self.store.set_group_template = AsyncMock(side_effect=_set)
+        self.store.record_command_call = AsyncMock()
+        self.replies = ReplyService(tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_switch_template(tmp_path):
+    service = DummyUnionRankService(tmp_path)
+
+    # 1. 初始状态查询当前模板
+    event = FakeEvent(group_id="1001", message="切换模板")
+    results = [res async for res in service.switch_template(event, style="")]
+    assert len(results) == 1
+    assert "当前群模板风格为：默认风格 (default)" in results[0].text
+
+    # 2. 切换为经典风格
+    event_classic = FakeEvent(group_id="1001", message="切换模板 经典")
+    results_classic = [res async for res in service.switch_template(event_classic, style="经典")]
+    assert len(results_classic) == 1
+    assert "本群模板已成功切换为：经典风格 (classic)" in results_classic[0].text
+    assert await service.store.get_group_template("1001") == "classic"
+
+    # 3. 再次查询为经典风格
+    event_check = FakeEvent(group_id="1001", message="切换模板")
+    results_check = [res async for res in service.switch_template(event_check, style="")]
+    assert "当前群模板风格为：经典风格 (classic)" in results_check[0].text
+
+    # 4. 切换为默认风格
+    event_default = FakeEvent(group_id="1001", message="切换模板 default")
+    results_default = [res async for res in service.switch_template(event_default, style="default")]
+    assert "本群模板已成功切换为：默认风格 (default)" in results_default[0].text
+    assert await service.store.get_group_template("1001") == "default"
+
+    # 5. 不支持的风格
+    event_err = FakeEvent(group_id="1001", message="切换模板 cyberpunk")
+    results_err = [res async for res in service.switch_template(event_err, style="cyberpunk")]
+    assert len(results_err) == 1
+    assert "不支持的模板风格「cyberpunk」" in results_err[0].text
+
+    # 6. 私聊使用应提示仅群聊支持
+    event_private = FakeEvent(group_id="", message="切换模板")
+    results_priv = [res async for res in service.switch_template(event_private, style="")]
+    assert len(results_priv) == 1
+    assert "仅支持在群聊中使用" in results_priv[0].text
+
+
+@pytest.mark.asyncio
+async def test_send_rank_passes_group_style(tmp_path, monkeypatch):
+    service = DummyUnionRankService(tmp_path)
+    service._template_map["1001"] = "classic"
+
+    captured_style = None
+
+    class MockRenderer:
+        def __init__(self, style=None):
+            nonlocal captured_style
+            captured_style = style
+
+        def html(self, **kwargs):
+            return "<html></html>"
+
+        async def to_png(self, html):
+            return b"fake-png"
+
+    monkeypatch.setattr("astrbot_plugin_bqyx.handlers.union_rank.UnionRankRenderer", MockRenderer)
+
+    event = FakeEvent(group_id="1001")
+    await service._send_rank(
+        event,
+        title="今日日贡排行",
+        date_label="2026-08-24",
+        rows=[],
+        captured_at="2026-08-24T12:00:00Z",
+    )
+    assert captured_style == "classic"

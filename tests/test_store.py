@@ -20,6 +20,16 @@ async def test_group_army_roundtrip(store):
     assert await store.get_group_army("100") == 99
 
 
+async def test_group_template_roundtrip(store):
+    assert await store.get_group_template("100") is None
+    await store.set_group_template("100", "classic")
+    assert await store.get_group_template("100") == "classic"
+    await store.set_group_template("100", "default")
+    assert await store.get_group_template("100") == "default"
+    templates = await store.list_group_templates()
+    assert templates == [("100", "default")]
+
+
 async def test_user_bind_includes_arch_index(store):
     await store.set_user_bind("100", "200", "5061", 4)
     bind = await store.get_user_bind("100", "200")

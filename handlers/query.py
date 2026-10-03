@@ -310,7 +310,9 @@ class QueryHandlers(BqyxServices):
             except Exception:
                 player_name = target_uid
 
-        renderer = MyContributionRenderer()
+        group_id = str(event.get_group_id() or "")
+        style = (await self.store.get_group_template(group_id)) if group_id else None
+        renderer = MyContributionRenderer(style=style)
         html = renderer.html(
             player_name=player_name,
             year=year,

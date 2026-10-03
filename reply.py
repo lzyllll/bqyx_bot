@@ -247,7 +247,9 @@ def build_help_keyboard(
             "- **上周周贡排行** `[范围]`：上周周贡归档排行\n\n"
             "### 军队与PK\n"
             "- **军队排行** `[范围]`：全服军队战力总排行（例：`军队排行 1-50`）\n"
-            "- **查PK** `[图片|文本]`：全军团 PK 竞技排行榜"
+            "- **查PK** `[图片|文本]`：全军团 PK 竞技排行榜\n\n"
+            "### 模板设置\n"
+            "- **切换模板** `[默认|经典]`：切换本群排行图片风格（例：`切换模板 经典`）"
         )
         # 行 2: 日贡排行
         keyboard.add_row(
@@ -263,6 +265,10 @@ def build_help_keyboard(
         keyboard.add_row(
             QQCButton.command("军队排行", "军队排行", style=1),
             QQCButton.command("查PK", "查PK", style=1),
+        )
+        # 行 5: 模板切换
+        keyboard.add_row(
+            QQCButton.command("切换模板", "切换模板 ", enter=False, style=0),
         )
 
     return markdown_text, keyboard
@@ -523,7 +529,9 @@ class ReplyService:
                 "上周周贡排行 [范围]   上周周贡归档排行\n"
                 "  例：上周周贡排行 / 上周周贡排行 100\n"
                 "军队排行 [范围]       全服军队总排行（实时）\n"
-                "  例：军队排行 / 军队排行 1-50"
+                "  例：军队排行 / 军队排行 1-50\n"
+                "切换模板 [风格]       切换本群渲染模板风格（默认/经典）\n"
+                "  例：切换模板 / 切换模板 经典"
             ),
         }
 

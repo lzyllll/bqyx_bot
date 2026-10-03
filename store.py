@@ -80,6 +80,34 @@ class SqliteStore:
             (str(group_id), int(army_id), _utc_now()),
         )
 
+    async def get_group_template(self, group_id: str) -> str | None:
+        row = await self._run(
+            self._fetchone,
+            "SELECT template_style FROM group_template WHERE group_id = ?",
+            (str(group_id),),
+        )
+        return str(row[0]) if row else None
+
+    async def set_group_template(self, group_id: str, template_style: str) -> None:
+        await self._run(
+            self._execute,
+            """
+            INSERT INTO group_template (group_id, template_style, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(group_id) DO UPDATE SET
+                template_style = excluded.template_style,
+                updated_at = excluded.updated_at
+            """,
+            (str(group_id), str(template_style), _utc_now()),
+        )
+
+    async def list_group_templates(self) -> list[tuple[str, str]]:
+        rows = await self._run(
+            self._fetchall,
+            "SELECT group_id, template_style FROM group_template ORDER BY group_id",
+        )
+        return [(str(row[0]), str(row[1])) for row in rows]
+
     async def get_user_bind(self, group_id: str, qq_id: str) -> UserBind | None:
         row = await self._run(
             self._fetchone,
@@ -559,6 +587,11 @@ class SqliteStore:
                 CREATE TABLE IF NOT EXISTS group_army (
                     group_id TEXT PRIMARY KEY,
                     army_id INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS group_template (
+                    group_id TEXT PRIMARY KEY,
+                    template_style TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS user_bind (

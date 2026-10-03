@@ -9,8 +9,9 @@ from datetime import datetime, timedelta, timezone
 from astrbot.api.event import AstrMessageEvent, filter
 
 from ..context import BqyxServices
-from ..errors import ArmyNotBoundError, BotError
+from ..errors import ArmyNotBoundError, BotError, GroupOnlyError, ParamError
 from ..hooks import (
+    command_rate_limit,
     error_reply,
     last_week_union_limit,
     this_week_union_limit,
@@ -19,7 +20,7 @@ from ..hooks import (
     yesterday_union_limit,
 )
 from ..models import UnionSnapshot
-from bqyx_api.render import UnionRankRenderer
+from bqyx_api.render import TemplateStyle, UnionRankRenderer
 from ..schedule import (
     SHANGHAI,
     as_shanghai,
@@ -524,6 +525,65 @@ class UnionRankHandlers(BqyxServices):
             prev = prev_map.get(int(row["union_id"]))
             row["member_change"] = _member_change(row["members_num"], prev)
 
+    @filter.command("切换模板", alias={"设置模板", "模板风格", "切换风格", "群模板"})
+    @error_reply
+    @command_rate_limit(name="切换模板")
+    async def switch_template(self, event: AstrMessageEvent, style: str = ""):
+        """群聊内切换或查看排行榜渲染模板风格（以群为单位）。"""
+        group_id = str(event.get_group_id() or "")
+        if not group_id:
+            raise GroupOnlyError("切换模板功能仅支持在群聊中使用。")
+
+        style_arg = (style or "").strip().lower()
+        if not style_arg:
+            parts = event.message_str.strip().split()
+            if len(parts) > 1:
+                style_arg = parts[1].strip().lower()
+
+        style_map = {
+            "默认": TemplateStyle.DEFAULT.value,
+            "默认风格": TemplateStyle.DEFAULT.value,
+            "默认版": TemplateStyle.DEFAULT.value,
+            "default": TemplateStyle.DEFAULT.value,
+            "经典": TemplateStyle.CLASSIC.value,
+            "经典风格": TemplateStyle.CLASSIC.value,
+            "经典版": TemplateStyle.CLASSIC.value,
+            "classic": TemplateStyle.CLASSIC.value,
+        }
+        style_display = {
+            TemplateStyle.DEFAULT.value: "默认风格 (default)",
+            TemplateStyle.CLASSIC.value: "经典风格 (classic)",
+        }
+
+        if not style_arg:
+            current = (await self.store.get_group_template(group_id)) or TemplateStyle.DEFAULT.value
+            curr_desc = style_display.get(current, current)
+            yield self.replies.markdown_tip(
+                event,
+                f"当前群模板风格为：{curr_desc}",
+                "可选风格：\n"
+                "- `默认` (default)：现代卡片风看板\n"
+                "- `经典` (classic)：传统紧凑排行表\n\n"
+                "切换指令用法：`/切换模板 经典` 或 `/切换模板 默认`",
+            )
+            return
+
+        target_style = style_map.get(style_arg)
+        if not target_style:
+            raise ParamError(
+                f"不支持的模板风格「{style_arg}」",
+                usage="/切换模板 <默认|经典>",
+                extra="支持的风格：`默认` (default)、`经典` (classic)",
+            )
+
+        await self.store.set_group_template(group_id, target_style)
+        desc = style_display.get(target_style, target_style)
+        yield self.replies.markdown_success(
+            event,
+            f"本群模板已成功切换为：{desc}",
+            ["后续生成的军队排行图片将按此风格进行渲染。"],
+        )
+
     async def _send_rank(
         self,
         event: AstrMessageEvent,
@@ -535,7 +595,9 @@ class UnionRankHandlers(BqyxServices):
         show_daily: bool = True,
         score_label: str | None = None,
     ) -> MessageEventResult:
-        renderer = UnionRankRenderer()
+        group_id = str(event.get_group_id() or "")
+        style = (await self.store.get_group_template(group_id)) if group_id else None
+        renderer = UnionRankRenderer(style=style)
         html = renderer.html(
             title=title,
             date_label=date_label,
