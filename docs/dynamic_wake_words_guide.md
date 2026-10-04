@@ -338,3 +338,8 @@ class GroupDynamicWakePlugin(Star):
 3. **读写分离与零 I/O 延迟架构**：
    - 聊天消息过滤属于毫秒级极敏感链路，绝对不能在每条接收到的群消息中都去打一次磁盘 SQLite 数据库（会严重阻塞事件循环或造成连接争用）。
    - 采用「内存读缓存 + 异步线程池写盘」方案：Bot 启动（`@filter.on_astrbot_loaded`）时将 SQLite 全量唤醒词一次性加载进内存字典，后续每条消息均在内存中以 $\mathcal{O}(1)$ 速度检索；仅当群管理员发送增删指令时，才通过 `asyncio.to_thread` 异步写回 SQLite 数据表，实现极致性能与持久化的完美兼顾。
+4. **QQ 机器人官方文档规范鉴权 (`member_role`)**：
+   - 依据 [QQ 机器人官方文档规范](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html)，事件体中 `author.member_role` 定义了发送者的群内角色：`admin`（管理员）、`owner`（群主）、`member`（普通成员）。
+   - 管理指令（如设置、删除、清空本群唤醒词）应严格通过 `member_role in ("admin", "owner")` 进行管理员权限判定，并同时兼容 OneBot/aiocqhttp 的 `sender.role` 与 AstrBot 全局 `admins_id`。
+5. **生产级独立插件仓库**：
+   - 该功能已封装为独立的生产级 AstrBot 插件：[astrbot_plugin_group_wake](https://github.com/lzyllll/astrbot_plugin_group_wake)，支持可视化 Web 配置、全套别名指令与完整的自动化测试用例。
