@@ -108,36 +108,101 @@ from astrbot.core.star.filter.custom_filter import CustomFilter
 # ==============================================================================
 # 1. 动态唤醒词仓库 (支持内存缓存、SQLite、Redis 或配置存储)
 # ==============================================================================
-class DynamicWakeManager:
-    """管理每个群/用户的专属唤醒词映射"""
+# 1. SQLite 动态唤醒词持久化仓库 (内存读缓存 + SQLite 异步持久化)
+# ==============================================================================
+import asyncio
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
 
-    def __init__(self) -> None:
-        # group_id -> set of wake words
-        self._group_wake_words: dict[str, set[str]] = {
-            # 示例预设：群 123456789 支持 "小助手" 和 "管家"
-            "123456789": {"小助手", "管家"},
-        }
-        # user_id -> set of wake words (可选: 针对特定用户的个性化唤醒)
-        self._user_wake_words: dict[str, set[str]] = {}
 
-    def get_wake_words(self, group_id: str, user_id: str = "") -> set[str]:
-        words: set[str] = set()
-        if group_id and group_id in self._group_wake_words:
-            words.update(self._group_wake_words[group_id])
-        if user_id and user_id in self._user_wake_words:
-            words.update(self._user_wake_words[user_id])
-        return words
+class SqliteDynamicWakeManager:
+    """基于 SQLite 的分群唤醒词存储引擎（内存读缓存 + 异步线程池写盘）。
 
-    def set_group_wake(self, group_id: str, word: str) -> None:
-        self._group_wake_words.setdefault(str(group_id), set()).add(word.strip())
+    - 读操作：高频消息检测直接读取内存字典，零磁盘 I/O 延迟（微秒级响应）；
+    - 写操作：管理员修改时双写内存与 SQLite 数据库，跨重启安全持久化。
+    """
 
-    def remove_group_wake(self, group_id: str, word: str) -> None:
+    def __init__(self, db_path: Path | str) -> None:
+        self.db_path = Path(db_path)
+        self._cache: dict[str, set[str]] = {}  # group_id -> set of wake words
+        self._lock = asyncio.Lock()
+
+    async def init_db(self) -> None:
+        """初始化 SQLite 数据表结构并预热全量缓存至内存。"""
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self._sync_init_and_load)
+
+    def _sync_init_and_load(self) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS group_wake_words (
+                    group_id TEXT NOT NULL,
+                    wake_word TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (group_id, wake_word)
+                )
+                """
+            )
+            cursor.execute("SELECT group_id, wake_word FROM group_wake_words")
+            new_cache: dict[str, set[str]] = {}
+            for gid, word in cursor.fetchall():
+                new_cache.setdefault(str(gid), set()).add(str(word))
+            self._cache = new_cache
+
+    def get_wake_words(self, group_id: str) -> set[str]:
+        """读取唤醒词：直接从内存缓存检索，每条聊天消息均可零成本极速匹配。"""
+        return self._cache.get(str(group_id), set())
+
+    async def add_group_wake(self, group_id: str, word: str) -> bool:
+        """异步添加本群唤醒词并持久化到 SQLite。"""
         gid = str(group_id)
-        if gid in self._group_wake_words:
-            self._group_wake_words[gid].discard(word.strip())
+        w = word.strip()
+        if not w:
+            return False
+
+        async with self._lock:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await asyncio.to_thread(self._sync_insert, gid, w, now_iso)
+            self._cache.setdefault(gid, set()).add(w)
+            return True
+
+    def _sync_insert(self, group_id: str, word: str, created_at: str) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO group_wake_words (group_id, wake_word, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (group_id, word, created_at),
+            )
+            conn.commit()
+
+    async def remove_group_wake(self, group_id: str, word: str) -> bool:
+        """异步从 SQLite 删除本群唤醒词并同步更新内存缓存。"""
+        gid = str(group_id)
+        w = word.strip()
+        async with self._lock:
+            await asyncio.to_thread(self._sync_delete, gid, w)
+            if gid in self._cache:
+                self._cache[gid].discard(w)
+            return True
+
+    def _sync_delete(self, group_id: str, word: str) -> None:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM group_wake_words WHERE group_id = ? AND wake_word = ?",
+                (group_id, word),
+            )
+            conn.commit()
 
 
-wake_manager = DynamicWakeManager()
+# 默认保存在插件数据目录下的 wake_words.db
+wake_manager = SqliteDynamicWakeManager(Path("data/wake_words.db"))
 
 
 # ==============================================================================
@@ -161,10 +226,8 @@ class DynamicGroupWakeFilter(CustomFilter):
         if not msg:
             return False
 
-        user_id = str(event.get_sender_id() or "")
-
-        # 动态获取本群与该用户当前配置的有效唤醒词集合
-        wake_words = wake_manager.get_wake_words(group_id, user_id)
+        # 动态从内存缓存获取本群当前生效的唤醒词集合（零 I/O 延迟）
+        wake_words = wake_manager.get_wake_words(group_id)
         if not wake_words:
             return False
 
@@ -188,8 +251,13 @@ class DynamicGroupWakeFilter(CustomFilter):
 # ==============================================================================
 # 3. 插件主类注册与管理指令
 # ==============================================================================
-@register("group_dynamic_wake", "Author", "分群自定义动态唤醒词系统", "1.0.0")
+@register("group_dynamic_wake", "Author", "分群 SQLite 动态唤醒词系统", "1.0.0")
 class GroupDynamicWakePlugin(Star):
+
+    @filter.on_astrbot_loaded()
+    async def on_loaded(self) -> None:
+        """Bot 启动加载完毕时，自动初始化 SQLite 数据表并预热内存读缓存。"""
+        await wake_manager.init_db()
 
     # 声明 priority=10000 最高优先级，保证先于一切普通指令执行唤醒判断与前缀剥离
     @filter.custom_filter(DynamicGroupWakeFilter, priority=10000)
@@ -204,7 +272,7 @@ class GroupDynamicWakePlugin(Star):
 
     @filter.command("设置本群唤醒词", permission_type=filter.PermissionType.ADMIN)
     async def set_group_wake_cmd(self, event: AstrMessageEvent, word: str = ""):
-        """为当前群添加专属动态唤醒词（限管理员）。"""
+        """为当前群添加专属动态唤醒词（持久化至 SQLite，限管理员）。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
             yield event.plain_result("该指令仅支持在群聊中使用。")
@@ -215,19 +283,19 @@ class GroupDynamicWakePlugin(Star):
             yield event.plain_result("请提供有效的唤醒词内容。例如：设置本群唤醒词 管家")
             return
 
-        wake_manager.set_group_wake(group_id, clean_word)
-        yield event.plain_result(f"🎉 已成功为本群添加专属唤醒词：「{clean_word}」")
+        await wake_manager.add_group_wake(group_id, clean_word)
+        yield event.plain_result(f"🎉 已成功为本群添加专属唤醒词：「{clean_word}」（已写入 SQLite 数据表）")
 
     @filter.command("删除本群唤醒词", permission_type=filter.PermissionType.ADMIN)
     async def remove_group_wake_cmd(self, event: AstrMessageEvent, word: str = ""):
-        """删除当前群的指定动态唤醒词（限管理员）。"""
+        """删除当前群的指定动态唤醒词（从 SQLite 移除，限管理员）。"""
         group_id = str(event.get_group_id() or "")
         if not group_id:
             yield event.plain_result("该指令仅支持在群聊中使用。")
             return
 
         clean_word = word.strip()
-        wake_manager.remove_group_wake(group_id, clean_word)
+        await wake_manager.remove_group_wake(group_id, clean_word)
         yield event.plain_result(f"已移除本群唤醒词：「{clean_word}」")
 
     @filter.command("查看本群唤醒词")
@@ -267,5 +335,6 @@ class GroupDynamicWakePlugin(Star):
    - 否则若先匹配到了 `小助`，消息 `小助手 查战力` 会被错误切分为 `手 查战力`，导致后续指令无法被正确识别。
 2. **严格守护私聊独立性**：
    - 必须通过 `if not event.get_group_id(): return False` 守卫分支，避免群聊逻辑污染私聊。
-3. **数据持久化扩展**：
-   - 上述示例中的 `DynamicWakeManager` 内部使用字典作为基础示例。在大型生产部署中，可将 `_group_wake_words` 挂接至 SQLite 或 Redis，即可实现跨重启无缝持久化与多节点集群同步。
+3. **读写分离与零 I/O 延迟架构**：
+   - 聊天消息过滤属于毫秒级极敏感链路，绝对不能在每条接收到的群消息中都去打一次磁盘 SQLite 数据库（会严重阻塞事件循环或造成连接争用）。
+   - 采用「内存读缓存 + 异步线程池写盘」方案：Bot 启动（`@filter.on_astrbot_loaded`）时将 SQLite 全量唤醒词一次性加载进内存字典，后续每条消息均在内存中以 $\mathcal{O}(1)$ 速度检索；仅当群管理员发送增删指令时，才通过 `asyncio.to_thread` 异步写回 SQLite 数据表，实现极致性能与持久化的完美兼顾。
