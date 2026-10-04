@@ -61,5 +61,6 @@
 
 ## 文档与排障指南
 
+- [AstrBot 动态唤醒词（分群/用户/业务逻辑）实现原理与实践指南](docs/dynamic_wake_words_guide.md)
 - [QQ 官方机器人交互标签 `qqbot-cmd-input` 解析失败排查与优化指南](docs/qqbot_cmd_input_diagnostics.md)
 - [QQ 官方机器人接口超时与 DNS/MTU 诊断优化指南](docs/qqofficial_timeout_diagnostics.md)
