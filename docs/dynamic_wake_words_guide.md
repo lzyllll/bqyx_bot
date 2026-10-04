@@ -341,5 +341,12 @@ class GroupDynamicWakePlugin(Star):
 4. **QQ 机器人官方文档规范鉴权 (`member_role`)**：
    - 依据 [QQ 机器人官方文档规范](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html)，事件体中 `author.member_role` 定义了发送者的群内角色：`admin`（管理员）、`owner`（群主）、`member`（普通成员）。
    - 管理指令（如设置、删除、清空本群唤醒词）应严格通过 `member_role in ("admin", "owner")` 进行管理员权限判定，并同时兼容 OneBot/aiocqhttp 的 `sender.role` 与 AstrBot 全局 `admins_id`。
-5. **生产级独立插件仓库**：
+5. **生产级独立插件仓库与交互体验**：
    - 该功能已封装为独立的生产级 AstrBot 插件：[astrbot_plugin_group_wake](https://github.com/lzyllll/astrbot_plugin_group_wake)，支持可视化 Web 配置、全套别名指令与完整的自动化测试用例。
+   - **交互体验升级**：输出全面采用 Markdown Tips 卡片风格（`> 💡`、`> ⚠️`、`> 🎉`），并支持 `<qqbot-cmd-input>` 标签，用户点击指令蓝字即可一键复制/直接填入聊天框。
+   - **主指令规范**：帮助指令主触发词为 `帮助 唤醒词`（同时兼容 `唤醒词 帮助`、`唤醒词` 等）。
+6. **QQ 机器人官方权限关键前提（群主必开）**：
+   - QQ 开放平台官方机器人默认进群后**仅能接收到 `@机器人` 的事件消息**。
+   - 若要群内成员无需 `@` 直接通过「唤醒词」触发机器人，**必须由群主**在手机 QQ 中点击【群设置】➔【群机器人】➔ 点击本机器人 ➔ 开启**「接收所有消息」**权限。
+   - 若未开启该权限，腾讯底层服务器完全不会向机器人推送群内普通聊天消息（只能收到 @消息），免 @ 唤醒词将无法被机器人接收并处理！
+
